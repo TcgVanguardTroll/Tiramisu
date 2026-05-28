@@ -1,0 +1,56 @@
+# secrets
+.env
+*.env.*
+secrets/
+
+# runtime state — never commit
+state/
+threads/
+shared_workspace/
+reviews/
+logs/
+queue/state.json
+
+# personal profile — copy profile.yaml.example to profile.yaml and fill in
+second_brain/profile.yaml
+
+# local Claude Code overrides (hardcoded paths)
+.claude/settings.local.json
+
+# knowledge base content — project-specific, not part of the framework
+knowledge/*.md
+!knowledge/README.md
+
+# vector index
+.second_brain_index/
+
+# database
+*.db
+*.db-shm
+*.db-wal
+
+# macOS metadata
+._*
+.DS_Store
+.AppleDouble
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Rust
+target/
+
+# Node
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
