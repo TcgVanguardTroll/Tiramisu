@@ -20,6 +20,8 @@ IF "%1"=="" GOTO usage
 IF /I "%1"=="hook"   GOTO hook
 IF /I "%1"=="task"   GOTO task
 IF /I "%1"=="review" GOTO review
+IF /I "%1"=="scan"   GOTO scan
+IF /I "%1"=="pr"     GOTO pr
 IF /I "%1"=="help"   GOTO usage
 GOTO unknown
 
@@ -41,13 +43,27 @@ REM  t review   -- run Cookie on staged diff right now, outside a commit
 %PYTHON% "%TIRAMISU_ROOT%\hooks\cookie_review.py"
 GOTO end
 
+:scan
+REM  t scan            -- scan current directory
+REM  t scan <path>     -- scan a file or directory
+%PYTHON% "%TIRAMISU_ROOT%\scripts\scan.py" %~2
+GOTO end
+
+:pr
+REM  t pr              -- review all changes vs main/master
+REM  t pr <branch>     -- review all changes vs a specific branch
+%PYTHON% "%TIRAMISU_ROOT%\scripts\pr_review.py" %~2
+GOTO end
+
 :usage
 echo.
 echo   Tiramisu  --  t ^<command^> [args]
 echo.
 echo   t hook [path]      Install Cookie + Eclair hooks (default: current dir)
 echo   t task [desc]      Croissant scope session before you start coding
-echo   t review           Cookie ad-hoc review of staged diff
+echo   t review           Cookie reviews staged diff (outside a commit)
+echo   t scan [path]      Cookie reads a file or directory in full
+echo   t pr [base]        Cookie reviews your whole branch vs main
 echo   t help             This message
 echo.
 GOTO end

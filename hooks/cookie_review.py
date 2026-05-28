@@ -2,10 +2,11 @@
 """
 Cookie pre-commit review hook.
 Runs Cookie (tortoiseshell cat code reviewer) on your staged diff before every commit.
+Passes the full content of changed files alongside the diff so Cookie has real context.
 Blocks the commit if BLOCKERs are found and you don't override.
 
 Install into a repo:
-    python3 G:/tiramisu-portable/scripts/install_hooks.py <path-to-your-repo>
+    t hook
 """
 import subprocess
 import sys
@@ -22,26 +23,54 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke_stream, FAST_MODEL
 
+MAX_DIFF_CHARS     = 6000
+MAX_PER_FILE_CHARS = 4000
+MAX_FILES          = 6
 
-def get_staged_diff() -> str:
-    result = subprocess.run(
+
+def get_staged_diff() -> tuple[str, str]:
+    stat = subprocess.run(
         ["git", "diff", "--cached", "--stat"],
         capture_output=True, text=True
-    )
-    stat = result.stdout.strip()
-
-    result = subprocess.run(
+    ).stdout.strip()
+    diff = subprocess.run(
         ["git", "diff", "--cached"],
         capture_output=True, text=True
+    ).stdout.strip()
+    return stat, diff
+
+
+def get_changed_files() -> list[str]:
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        capture_output=True, text=True
     )
-    return stat, result.stdout.strip()
+    return [f.strip() for f in result.stdout.strip().splitlines() if f.strip()]
+
+
+def build_file_context(files: list[str]) -> str:
+    """Read the full content of each changed file so Cookie sees surrounding code."""
+    parts = []
+    for name in files[:MAX_FILES]:
+        p = Path(name)
+        if not p.exists():
+            continue  # deleted file — diff alone is enough
+        try:
+            content = p.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        if len(content) > MAX_PER_FILE_CHARS:
+            content = content[:MAX_PER_FILE_CHARS] + f"\n... [truncated — {len(content)} chars total]"
+        ext = p.suffix.lstrip(".")
+        parts.append(f"### {name}\n```{ext}\n{content}\n```")
+    return "\n\n".join(parts)
 
 
 def main():
     stat, diff = get_staged_diff()
 
     if not diff:
-        sys.exit(0)  # Nothing staged, nothing to review
+        sys.exit(0)
 
     agent_file = ROOT / "agents" / "cookie.md"
     if not agent_file.exists():
@@ -50,16 +79,25 @@ def main():
 
     system = agent_file.read_text(encoding="utf-8")
 
-    print(f"\n🐱 Cookie is reviewing your changes...\n")
+    print(f"\nCookie is reviewing your changes...\n")
     print(f"  {stat}\n")
     print("-" * 60)
 
+    # Build context: diff + full files
+    files = get_changed_files()
+    file_context = build_file_context(files)
+
+    prompt = (
+        "Review this commit. Flag BLOCKERs and serious issues only — "
+        "bugs, broken callers, security problems, missing null checks. "
+        "If nothing is seriously wrong, say LGTM.\n\n"
+        f"## Staged diff\n```diff\n{diff[:MAX_DIFF_CHARS]}\n```"
+    )
+    if file_context:
+        prompt += f"\n\n## Full file context (so you can see what the diff touches)\n\n{file_context}"
+
     review = invoke_stream(
-        prompt=(
-            f"Review this staged diff. Be concise — flag BLOCKERs and serious issues only. "
-            f"If nothing is seriously wrong, say LGTM.\n\n"
-            f"```diff\n{diff[:8000]}\n```"
-        ),
+        prompt=prompt,
         system=system,
         model=FAST_MODEL,
         max_tokens=1024,
@@ -68,7 +106,7 @@ def main():
     print("-" * 60)
 
     if "BLOCKER" in review.upper():
-        print("\n⛔  Cookie found blockers. Commit anyway? [y/N] ", end="", flush=True)
+        print("\nCookie found blockers. Commit anyway? [y/N] ", end="", flush=True)
         try:
             answer = sys.stdin.readline().strip().lower()
         except (EOFError, KeyboardInterrupt):
@@ -79,7 +117,7 @@ def main():
         else:
             print("Proceeding despite blockers.\n")
     else:
-        print("\n✓ Cookie approves. Committing.\n")
+        print("\nCookie approves. Committing.\n")
 
 
 if __name__ == "__main__":
