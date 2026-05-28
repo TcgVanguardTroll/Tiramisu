@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """
-Tiramisu — the orchestrator dispatch.
+Tiramisu -- the orchestrator dispatch.
 
 A single natural-language entry point. The user types `tiramisu "do this thing"`
 and Tiramisu (the red tri Aussie Shepherd) picks the right agent and runs the
 right command. If you already know which agent you want, use `t <cmd>` directly
 to skip the routing step.
 
+With no args, drops into an interactive REPL backed by prompt_toolkit:
+  - persistent command history at ~/.tiramisu/.repl_history
+  - tab completion on built-ins, phrase starters, and past prompts
+  - rich-styled output and a spinner while routing
+
 Usage:
-    tiramisu "add a logout button to the header"
-    tiramisu "scope a refactor of the auth layer"
-    tiramisu "review my changes"
-    tiramisu "look over the codebase"
-    tiramisu "remember that I prefer guard clauses"
-    tiramisu "show me what I've been working on"
+    tiramisu                         # interactive REPL
+    tiramisu add a logout button     # one-shot, no quotes needed
+    tiramisu scope a refactor of auth
 """
 import os
 import subprocess
@@ -29,6 +31,17 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke, FAST_MODEL
+
+# Rich + prompt_toolkit are required at runtime. The dispatcher refuses to start
+# without them, so import failures are loud, not silent.
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.styles import Style
+from prompt_toolkit.formatted_text import FormattedText
 
 
 # What the router can route to. Keys are the t.bat subcommand; values describe
@@ -69,6 +82,17 @@ User request: {input}
 Command:"""
 
 
+HOME = Path.home()
+HISTORY_FILE = Path(os.environ.get("TIRAMISU_HOME", HOME / ".tiramisu")) / ".repl_history"
+
+console = Console()
+
+PROMPT_STYLE = Style.from_dict({
+    "tiramisu": "ansicyan bold",
+    "arrow":    "ansigreen",
+})
+
+
 def route(user_input: str) -> str:
     """Ask FAST_MODEL which agent should handle this request."""
     routes_block = "\n".join(f"  - {k:10} -- {v}" for k, v in ROUTES.items())
@@ -77,68 +101,141 @@ def route(user_input: str) -> str:
     try:
         raw = invoke(prompt=prompt, model=FAST_MODEL, max_tokens=10, temperature=0.0)
     except Exception as e:
-        print(f"[tiramisu] router failed ({type(e).__name__}: {e}); "
-              f"falling back to `task`.", file=sys.stderr)
+        console.print(f"[red][tiramisu][/red] router failed ({type(e).__name__}: {e}); "
+                      f"falling back to [cyan]task[/cyan].")
         return "task"
 
-    # Strip punctuation, whitespace, take first token
     cmd = raw.strip().lower().split()[0].strip(".,;:'\"()[]") if raw.strip() else ""
 
     if cmd not in ROUTES:
-        print(f"[tiramisu] router returned unknown command {cmd!r}; "
-              f"falling back to `task`.", file=sys.stderr)
+        console.print(f"[yellow][tiramisu][/yellow] router returned unknown command "
+                      f"[dim]{cmd!r}[/dim]; falling back to [cyan]task[/cyan].")
         return "task"
 
     return cmd
 
 
 def run_subcommand(cmd: str, user_input: str) -> int:
-    """Exec t.bat <cmd> [user_input]. Returns the subprocess returncode (does not exit)."""
-    t_bat = ROOT / "t.bat"
-    if not t_bat.exists():
-        print(f"[tiramisu] missing dispatcher: {t_bat}", file=sys.stderr)
+    """Exec t.bat <cmd> [user_input]. Returns the subprocess returncode."""
+    if os.name == "nt":
+        t_dispatcher = ROOT / "t.bat"
+    else:
+        t_dispatcher = ROOT / "t"
+
+    if not t_dispatcher.exists():
+        console.print(f"[red][tiramisu][/red] missing dispatcher: {t_dispatcher}")
         return 1
 
-    # Commands that take a free-text description as their argument
     takes_input = {"task", "implement", "learn"}
 
     if cmd in takes_input:
-        args = [str(t_bat), cmd, user_input]
+        args = [str(t_dispatcher), cmd, user_input]
     else:
-        # scan, review, pr, reflect, help — natural-language input doesn't help them
-        args = [str(t_bat), cmd]
+        args = [str(t_dispatcher), cmd]
 
-    # On Windows, .bat files need shell=True to be invoked through cmd.exe
     result = subprocess.run(args, shell=(os.name == "nt"))
     return result.returncode
 
 
-REPL_BUILTINS = {
-    "exit", "quit", "bye", "q", ":q",
-}
+# -------- REPL --------
+
+REPL_BUILTINS = {"exit", "quit", "bye", "q", ":q"}
+
+PHRASE_STARTERS = [
+    "implement ",
+    "scope ",
+    "scan ",
+    "review my staged diff",
+    "look at the codebase",
+    "remember ",
+    "show me my patterns",
+    "check this PR",
+    "review the branch",
+]
 
 
-def print_routes():
-    print("\n  Routing table (Tiramisu picks one of these per input):")
+class TiramisuCompleter(Completer):
+    """Complete on built-ins + phrase starters + recent history (newest first)."""
+    def __init__(self, history: FileHistory):
+        self._history = history
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+        if not text.strip():
+            return
+
+        text_lower = text.lower()
+        seen = set()
+
+        all_candidates = list(REPL_BUILTINS) + ["help", "?", "clear", "cls"] + PHRASE_STARTERS
+
+        for c in all_candidates:
+            if c.lower().startswith(text_lower) and c not in seen:
+                seen.add(c)
+                yield Completion(c, start_position=-len(text))
+
+        try:
+            history_entries = list(self._history.load_history_strings())
+        except Exception:
+            history_entries = []
+        for entry in reversed(history_entries):
+            if entry.lower().startswith(text_lower) and entry not in seen:
+                seen.add(entry)
+                yield Completion(entry, start_position=-len(text))
+                if len(seen) > 25:
+                    break
+
+
+def render_banner():
+    body = (
+        "[bold]Type a request or question.[/bold] The right agent will run.\n"
+        "[dim]Built-ins:[/dim] help, exit, clear   "
+        "[dim]Keys:[/dim] up/down history, Tab complete, Esc+Enter multi-line"
+    )
+    console.print(Panel(body, title="🐕  Tiramisu", border_style="cyan", padding=(0, 2)))
+
+
+def render_routes():
+    console.print()
+    console.print("[bold]  Routing table (Tiramisu picks one of these per input):[/bold]")
     for k, v in ROUTES.items():
-        print(f"    t {k:10}  --  {v}")
-    print()
+        console.print(f"    [cyan]t {k:10}[/cyan]  [dim]{v}[/dim]")
+    console.print()
 
 
 def repl():
-    print("\n🐕  Tiramisu — interactive mode")
-    print("    Type a request or question. The right agent will run.")
-    print("    Built-ins: 'help' for routes, 'exit' / Ctrl+D to leave.\n")
+    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    HISTORY_FILE.touch(exist_ok=True)
+    history = FileHistory(str(HISTORY_FILE))
+
+    entry_count = sum(1 for _ in history.load_history_strings())
+
+    render_banner()
+    if entry_count:
+        console.print(f"[dim]   {HISTORY_FILE} loaded ({entry_count} entries)[/dim]\n")
+    else:
+        console.print()
+
+    session = PromptSession(
+        history=history,
+        completer=TiramisuCompleter(history),
+        complete_while_typing=False,
+        complete_in_thread=True,
+    )
+
+    prompt_msg = FormattedText([
+        ("class:tiramisu", "tiramisu"),
+        ("class:arrow", " » "),
+    ])
 
     while True:
         try:
-            user_input = input("tiramisu > ").strip()
-        except EOFError:
-            print()
-            break
+            user_input = session.prompt(prompt_msg, style=PROMPT_STYLE).strip()
         except KeyboardInterrupt:
-            print()
+            console.print("[dim](use 'exit' to leave)[/dim]")
             continue
+        except EOFError:
+            break
 
         if not user_input:
             continue
@@ -147,41 +244,44 @@ def repl():
         if lower in REPL_BUILTINS:
             break
         if lower in ("help", "?", "h"):
-            print_routes()
+            render_routes()
             continue
         if lower in ("clear", "cls"):
-            # ANSI clear; works in modern Windows terminals
-            print("\033[2J\033[H", end="")
+            console.clear()
             continue
 
         try:
-            cmd = route(user_input)
-            print(f"  ->  t {cmd}\n")
+            with console.status("[dim]Tiramisu is routing…[/dim]", spinner="dots"):
+                cmd = route(user_input)
+            console.print(f"  [dim]→[/dim] [bold cyan]t {cmd}[/bold cyan]\n")
             run_subcommand(cmd, user_input)
-            print()  # spacer before next prompt
+            console.print()
         except KeyboardInterrupt:
-            print("\n[interrupted -- back at the prompt]\n")
+            console.print("\n[yellow][interrupted -- back at the prompt][/yellow]\n")
             continue
 
-    print("🐕  bye\n")
+    console.print("[bold cyan]🐕  bye[/bold cyan]\n")
 
 
 def main():
     args = sys.argv[1:]
 
-    # No args: enter interactive REPL
     if not args:
         repl()
         return
 
-    # One-shot: route, execute, exit with subcommand's code
     user_input = " ".join(args).strip()
     if not user_input:
-        print("[tiramisu] empty input")
+        console.print("[red][tiramisu][/red] empty input")
         sys.exit(1)
 
-    cmd = route(user_input)
-    print(f"\n🐕  Tiramisu  ->  t {cmd}    (\"{user_input[:60]}{'...' if len(user_input) > 60 else ''}\")\n")
+    with console.status("[dim]Tiramisu is routing…[/dim]", spinner="dots"):
+        cmd = route(user_input)
+
+    preview = user_input if len(user_input) <= 60 else user_input[:60] + "..."
+    console.print(f"\n[bold cyan]🐕  Tiramisu[/bold cyan]  [dim]→[/dim]  "
+                  f"[bold cyan]t {cmd}[/bold cyan]    [dim]({preview!r})[/dim]\n")
+
     sys.exit(run_subcommand(cmd, user_input))
 
 
