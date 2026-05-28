@@ -19,9 +19,48 @@ Every agent is named after a pastry that matches their fur.
 
 ---
 
-## The CLI — `t`
+## Two entry points: `tiramisu` and `t`
 
-Every interaction goes through one command:
+Tiramisu has two CLI surfaces. Use whichever fits the moment.
+
+### `tiramisu` — natural language entry / REPL
+
+Don't want to think about which agent? Just type:
+
+```
+tiramisu add a logout button to the header
+tiramisu scope adding dark mode
+tiramisu look over the codebase
+tiramisu remember I prefer guard clauses
+```
+
+Tiramisu (the orchestrator) picks the right agent and runs it. No quotes needed.
+
+With no args, you enter an interactive REPL:
+
+```
+$ tiramisu
+
+🐕  Tiramisu — interactive mode
+    Type a request or question. The right agent will run.
+    Built-ins: 'help' for routes, 'exit' / Ctrl+D to leave.
+
+tiramisu > scope adding dark mode
+  ->  t task
+  [Croissant streams a scope plan]
+
+tiramisu > implement the dark mode toggle
+  ->  t implement
+  [Éclair writes the code]
+
+tiramisu > exit
+```
+
+REPL built-ins: `help`, `exit` / `quit` / `q`, `clear`. Ctrl+C kills a running subcommand but keeps the REPL alive. Ctrl+D exits the REPL.
+
+### `t <command>` — direct invocation
+
+If you already know which agent you want, skip the router:
 
 | Command | What it does |
 |---------|--------------|
@@ -36,6 +75,8 @@ Every interaction goes through one command:
 | `t learn list` | Show all active preferences |
 | `t reflect [days]` | Madeleine's self-improvement report from accumulated data |
 | `t help` | Print the command list |
+
+`t` skips the ~200ms LLM router step. `tiramisu` is friendlier.
 
 ---
 
@@ -112,19 +153,37 @@ New-Item -ItemType Directory -Force "$HOME\.tiramisu" | Out-Null
 Open a fresh terminal, then verify:
 ```powershell
 t help
+tiramisu
 ```
 
-### Install (Linux / macOS)
+Windows uses `t.bat` / `tiramisu.bat`. PATHEXT picks them up automatically when you type `t` or `tiramisu`.
+
+### Install (macOS / Linux)
 
 ```bash
+# 1. Clone wherever you want it to live
 git clone https://github.com/TcgVanguardTroll/tiramisu.git ~/.local/share/tiramisu
+
+# 2. Install Python deps
 pip3 install -r ~/.local/share/tiramisu/requirements.txt
 
+# 3. Add to PATH (adjust shell as needed)
+echo 'export PATH="$HOME/.local/share/tiramisu:$PATH"' >> ~/.bashrc   # or ~/.zshrc
+
+# 4. Configure your API key
 mkdir -p ~/.tiramisu
 echo "ANTHROPIC_API_KEY=sk-ant-your-key-here" > ~/.tiramisu/.env
 ```
 
-> The dispatcher is currently `t.bat` (Windows-batch). A POSIX `t` shim is a small follow-up.
+Open a fresh terminal, then verify:
+```bash
+t help
+tiramisu
+```
+
+POSIX uses the extension-less `t` and `tiramisu` shell scripts, which exec the same Python entry points the `.bat` files do.
+
+> **Cross-platform note**: line endings on the shell scripts are pinned to LF in `.gitattributes` (otherwise Windows checkouts of POSIX shims would break), and `.bat` files are pinned to CRLF (otherwise `cmd.exe` mis-parses them).
 
 ---
 
@@ -176,6 +235,7 @@ tiramisu/
 ├── agents/                  # Persona files for each crew member
 ├── hooks/                   # cookie_review.py, eclair_commit_msg.py, eclair_post_commit.py
 ├── scripts/                 # CLI implementations + shared utilities
+│   ├── dispatch.py          # tiramisu — natural-language router + REPL
 │   ├── implement.py         # t implement -- agentic code writer with tool use
 │   ├── scan.py              # t scan -- Cookie reads files/dirs in full
 │   ├── pr_review.py         # t pr -- branch review, --post creates inline PR comments
@@ -189,16 +249,20 @@ tiramisu/
 ├── code-style.md            # Per-language style: Java, Python, Rust, TypeScript
 ├── engineering-principles.md# Distilled from Bloch / Martin / Ousterhout / Kleppmann / Nygard
 ├── communication-style.md   # Tone, commit format, PR description template
-├── t.bat                    # CLI dispatcher
+├── t.bat                    # Windows dispatcher for `t <cmd>`
+├── tiramisu.bat             # Windows dispatcher for `tiramisu` (REPL + router)
+├── t                        # POSIX dispatcher for `t <cmd>`
+├── tiramisu                 # POSIX dispatcher for `tiramisu` (REPL + router)
 ├── requirements.txt         # anthropic, etc.
-└── .gitattributes           # Forces CRLF on .bat to keep cmd.exe happy
+└── .gitattributes           # Pins .bat to CRLF, POSIX shims to LF
 ```
 
 ---
 
 ## Design principles
 
-- **CLI-first** — every workflow is a `t <command>`. No required IDE plugin.
+- **CLI-first** — every workflow is a `t <command>` or a `tiramisu` REPL turn. No required IDE plugin.
+- **Cross-platform** — Windows uses `.bat` dispatchers, macOS/Linux uses extension-less POSIX shell scripts. Both call the same Python.
 - **Local-first** — your data, your preferences, your `learnings.db`. No cloud sync.
 - **Composable steering** — agents share the same source of truth (your codified standards) so they agree on what "good" means.
 - **Learn before mutate** — `t reflect` *proposes* changes; you decide whether to apply. Agents don't silently rewrite their own prompts.

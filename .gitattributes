@@ -4,5 +4,11 @@
 *.bat   text eol=crlf
 *.cmd   text eol=crlf
 
+# POSIX shell scripts MUST stay LF, even on Windows checkouts. Otherwise
+# Mac/Linux shells fail on the CR characters (`/bin/sh^M not found`).
+t       text eol=lf
+tiramisu text eol=lf
+*.sh    text eol=lf
+
 # Everything else: let git auto-detect
 * text=auto

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Tiramisu single-entry dispatcher (POSIX). Windows uses tiramisu.bat instead.
+# With no args: enters interactive REPL.
+# With args:    routes natural language to the right agent.
+set -e
+
+TIRAMISU_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON="${PYTHON:-python3}"
+
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+    echo "[tiramisu] Python not found. Set PYTHON env var or install python3." >&2
+    exit 1
+fi
+
+exec "$PYTHON" "$TIRAMISU_ROOT/scripts/dispatch.py" "$@"
