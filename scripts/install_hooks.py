@@ -47,6 +47,17 @@ exec "{python}" "{hook_script}" "$@"
         "description": "Eclair commit message drafter",
         "marker": "eclair_commit_msg",
     },
+    "post-commit": {
+        "script": TIRAMISU_ROOT / "hooks" / "eclair_post_commit.py",
+        "template": """\
+#!/bin/sh
+# Tiramisu -- Eclair post-commit (captures final message for learning)
+# Installed by: {installer}
+exec "{python}" "{hook_script}"
+""",
+        "description": "Eclair commit-outcome capture (learning loop)",
+        "marker": "eclair_post_commit",
+    },
 }
 
 

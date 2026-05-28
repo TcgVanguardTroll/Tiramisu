@@ -17,12 +17,14 @@ IF NOT EXIST "%PYTHON%" (
 )
 
 IF "%1"=="" GOTO usage
-IF /I "%1"=="hook"   GOTO hook
-IF /I "%1"=="task"   GOTO task
-IF /I "%1"=="review" GOTO review
-IF /I "%1"=="scan"   GOTO scan
-IF /I "%1"=="pr"     GOTO pr
-IF /I "%1"=="help"   GOTO usage
+IF /I "%1"=="hook"    GOTO hook
+IF /I "%1"=="task"    GOTO task
+IF /I "%1"=="review"  GOTO review
+IF /I "%1"=="scan"    GOTO scan
+IF /I "%1"=="pr"      GOTO pr
+IF /I "%1"=="learn"   GOTO learn
+IF /I "%1"=="reflect" GOTO reflect
+IF /I "%1"=="help"    GOTO usage
 GOTO unknown
 
 :hook
@@ -55,16 +57,31 @@ REM  t pr <branch>     -- review all changes vs a specific branch
 %PYTHON% "%TIRAMISU_ROOT%\scripts\pr_review.py" %~2
 GOTO end
 
+:learn
+REM  t learn "text"         -- teach the agents a preference
+REM  t learn list           -- show active preferences
+REM  t learn forget <id>    -- deactivate a preference
+%PYTHON% "%TIRAMISU_ROOT%\scripts\learn.py" %2 %3 %4 %5 %6 %7 %8 %9
+GOTO end
+
+:reflect
+REM  t reflect          -- 30-day self-improvement report
+REM  t reflect 7        -- last N days
+%PYTHON% "%TIRAMISU_ROOT%\scripts\reflect.py" %~2
+GOTO end
+
 :usage
 echo.
 echo   Tiramisu  --  t ^<command^> [args]
 echo.
-echo   t hook [path]      Install Cookie + Eclair hooks (default: current dir)
-echo   t task [desc]      Croissant scope session before you start coding
-echo   t review           Cookie reviews staged diff (outside a commit)
-echo   t scan [path]      Cookie reads a file or directory in full
-echo   t pr [base]        Cookie reviews your whole branch vs main
-echo   t help             This message
+echo   t hook [path]       Install Cookie + Eclair hooks (default: current dir)
+echo   t task [desc]       Croissant scope session before you start coding
+echo   t review            Cookie reviews staged diff (outside a commit)
+echo   t scan [path]       Cookie reads a file or directory in full
+echo   t pr [base]         Cookie reviews your whole branch vs main
+echo   t learn "text"      Teach the agents a preference
+echo   t reflect [days]    Weekly self-improvement report
+echo   t help              This message
 echo.
 GOTO end
 
