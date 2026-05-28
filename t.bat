@@ -52,9 +52,11 @@ REM  t scan <path>     -- scan a file or directory
 GOTO end
 
 :pr
-REM  t pr              -- review all changes vs main/master
-REM  t pr <branch>     -- review all changes vs a specific branch
-%PYTHON% "%TIRAMISU_ROOT%\scripts\pr_review.py" %~2
+REM  t pr                       -- local terminal review vs main/master
+REM  t pr <branch>              -- compare vs a specific base branch
+REM  t pr --post                -- also post inline comments to the GitHub PR
+REM  t pr --post --dry-run      -- generate and show, don't actually post
+%PYTHON% "%TIRAMISU_ROOT%\scripts\pr_review.py" %2 %3 %4 %5
 GOTO end
 
 :learn
@@ -79,6 +81,7 @@ echo   t task [desc]       Croissant scope session before you start coding
 echo   t review            Cookie reviews staged diff (outside a commit)
 echo   t scan [path]       Cookie reads a file or directory in full
 echo   t pr [base]         Cookie reviews your whole branch vs main
+echo   t pr --post         ...and posts inline comments to the GitHub PR
 echo   t learn "text"      Teach the agents a preference
 echo   t reflect [days]    Weekly self-improvement report
 echo   t help              This message
