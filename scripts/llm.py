@@ -1,79 +1,74 @@
-"""Shared LLM utility for Tiramisu scripts. Uses Bedrock directly via bw-bedrock profile."""
-import json
+"""Shared LLM utility for Tiramisu scripts. Uses the Anthropic API directly."""
 import os
-import sqlite3
-import sys
 from pathlib import Path
 
-import boto3
+_ENV_FILE = Path(os.environ.get("TIRAMISU_HOME", Path.home() / ".tiramisu")) / ".env"
 
-_client = None
-DEFAULT_MODEL = "us.anthropic.claude-sonnet-4-6"
-DB_PATH = str(Path(__file__).resolve().parent.parent / "tiramisu.db")
-
-# Cost per 1M tokens (USD) — Claude Sonnet 4 with 64% discount
-_COSTS = {
-    "us.anthropic.claude-sonnet-4-6": {"input": 1.08, "output": 5.40},
-    "us.anthropic.claude-haiku-3-5": {"input": 0.29, "output": 1.25},
-}
+# Update this to the latest model you want to use by default.
+DEFAULT_MODEL  = "claude-sonnet-4-5"
+FAST_MODEL     = "claude-haiku-3-5"
 
 
-def _get_client():
-    global _client
-    if _client is None:
-        os.environ.setdefault("AWS_PROFILE", "bw-bedrock")
-        _client = boto3.client("bedrock-runtime", region_name="us-west-2")
-    return _client
+def _load_env():
+    if _ENV_FILE.exists():
+        for line in _ENV_FILE.read_text(encoding="utf-8-sig").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ[k.strip()] = v.strip()
 
 
-def _caller_script():
-    """Identify which script called invoke()."""
-    for frame_info in reversed(sys._current_frames().values().__class__.__mro__):
-        pass  # fallback below
-    # Walk the stack to find the top-level script
-    import inspect
-    for frame in inspect.stack():
-        fname = frame.filename
-        if "tiramisu/scripts/" in fname or "tiramisu/hooks/" in fname:
-            return Path(fname).stem
-    return "unknown"
-
-
-def _log_usage(script, model, input_tokens, output_tokens):
-    """Log token usage to SQLite. Fire-and-forget."""
-    try:
-        costs = _COSTS.get(model, {"input": 1.0, "output": 5.0})
-        cost_usd = (input_tokens * costs["input"] + output_tokens * costs["output"]) / 1_000_000
-        conn = sqlite3.connect(DB_PATH, timeout=5)
-        conn.execute(
-            "INSERT INTO token_usage (script, model, input_tokens, output_tokens, cost_usd) VALUES (?, ?, ?, ?, ?)",
-            (script, model, input_tokens, output_tokens, cost_usd),
+def _client():
+    _load_env()
+    import anthropic
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY not set. Add it to ~/.tiramisu/.env"
         )
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass
+    return anthropic.Anthropic(api_key=key)
 
 
-def invoke(prompt, system=None, model=DEFAULT_MODEL, max_tokens=1024, temperature=0.3):
-    """Invoke Claude via Bedrock. Returns the text response. Logs token usage."""
-    messages = [{"role": "user", "content": prompt}]
-    body = {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "messages": messages,
-    }
+def invoke(
+    prompt,
+    system=None,
+    model=DEFAULT_MODEL,
+    max_tokens=1024,
+    temperature=0.3,
+) -> str:
+    """Call Claude and return the text response."""
+    client = _client()
+    kwargs = dict(
+        model=model,
+        max_tokens=max_tokens,
+        messages=[{"role": "user", "content": prompt}],
+    )
     if system:
-        body["system"] = system
-    resp = _get_client().invoke_model(modelId=model, body=json.dumps(body))
-    result = json.loads(resp["body"].read())
+        # Use prompt caching for system prompts — saves latency + cost on repeat calls
+        kwargs["system"] = [
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+        ]
+    resp = client.messages.create(**kwargs)
+    return resp.content[0].text
 
-    # Extract token usage and log
-    usage = result.get("usage", {})
-    input_tokens = usage.get("input_tokens", 0)
-    output_tokens = usage.get("output_tokens", 0)
-    script = _caller_script()
-    _log_usage(script, model, input_tokens, output_tokens)
 
-    return result["content"][0]["text"]
+def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
+    """Stream Claude's response, printing each chunk as it arrives. Returns full text."""
+    client = _client()
+    kwargs = dict(
+        model=model,
+        max_tokens=max_tokens,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    if system:
+        kwargs["system"] = [
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+        ]
+    full = []
+    with client.messages.stream(**kwargs) as stream:
+        for text in stream.text_stream:
+            print(text, end="", flush=True)
+            full.append(text)
+    print()
+    return "".join(full)
