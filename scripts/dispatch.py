@@ -92,12 +92,12 @@ def route(user_input: str) -> str:
     return cmd
 
 
-def run_subcommand(cmd: str, user_input: str):
-    """Exec t.bat <cmd> [user_input]. Some commands ignore the input."""
+def run_subcommand(cmd: str, user_input: str) -> int:
+    """Exec t.bat <cmd> [user_input]. Returns the subprocess returncode (does not exit)."""
     t_bat = ROOT / "t.bat"
     if not t_bat.exists():
         print(f"[tiramisu] missing dispatcher: {t_bat}", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     # Commands that take a free-text description as their argument
     takes_input = {"task", "implement", "learn"}
@@ -110,34 +110,79 @@ def run_subcommand(cmd: str, user_input: str):
 
     # On Windows, .bat files need shell=True to be invoked through cmd.exe
     result = subprocess.run(args, shell=(os.name == "nt"))
-    sys.exit(result.returncode)
+    return result.returncode
+
+
+REPL_BUILTINS = {
+    "exit", "quit", "bye", "q", ":q",
+}
+
+
+def print_routes():
+    print("\n  Routing table (Tiramisu picks one of these per input):")
+    for k, v in ROUTES.items():
+        print(f"    t {k:10}  --  {v}")
+    print()
+
+
+def repl():
+    print("\n🐕  Tiramisu — interactive mode")
+    print("    Type a request or question. The right agent will run.")
+    print("    Built-ins: 'help' for routes, 'exit' / Ctrl+D to leave.\n")
+
+    while True:
+        try:
+            user_input = input("tiramisu > ").strip()
+        except EOFError:
+            print()
+            break
+        except KeyboardInterrupt:
+            print()
+            continue
+
+        if not user_input:
+            continue
+
+        lower = user_input.lower()
+        if lower in REPL_BUILTINS:
+            break
+        if lower in ("help", "?", "h"):
+            print_routes()
+            continue
+        if lower in ("clear", "cls"):
+            # ANSI clear; works in modern Windows terminals
+            print("\033[2J\033[H", end="")
+            continue
+
+        try:
+            cmd = route(user_input)
+            print(f"  ->  t {cmd}\n")
+            run_subcommand(cmd, user_input)
+            print()  # spacer before next prompt
+        except KeyboardInterrupt:
+            print("\n[interrupted -- back at the prompt]\n")
+            continue
+
+    print("🐕  bye\n")
 
 
 def main():
     args = sys.argv[1:]
 
+    # No args: enter interactive REPL
     if not args:
-        print("\n🐕  Tiramisu — single-entry dispatcher")
-        print()
-        print("  Usage: tiramisu \"<your request in natural language>\"")
-        print()
-        print("  I'll route to the right agent. Examples:")
-        for k, v in ROUTES.items():
-            print(f"    \"...\"  ->  t {k:8}  ({v})")
-        print()
-        print("  If you already know which agent you want, use `t <cmd>` directly.")
-        print()
-        sys.exit(0)
+        repl()
+        return
 
+    # One-shot: route, execute, exit with subcommand's code
     user_input = " ".join(args).strip()
-
     if not user_input:
         print("[tiramisu] empty input")
         sys.exit(1)
 
     cmd = route(user_input)
     print(f"\n🐕  Tiramisu  ->  t {cmd}    (\"{user_input[:60]}{'...' if len(user_input) > 60 else ''}\")\n")
-    run_subcommand(cmd, user_input)
+    sys.exit(run_subcommand(cmd, user_input))
 
 
 if __name__ == "__main__":
