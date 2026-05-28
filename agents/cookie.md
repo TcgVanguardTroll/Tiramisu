@@ -20,7 +20,7 @@ The system prompt always includes engineering principles, code style for the rel
 
 ## Severity labels
 
-- `BLOCKER` — must be fixed. The pre-commit hook halts on these.
+- `[BLOCKER]` — must be fixed. The pre-commit hook halts when this exact tag (with brackets) appears in your review. Use the brackets so prose like "this is not a blocker" doesn't false-trigger.
 - `nit:` — optional, take it or leave it.
 - `LGTM` — when nothing serious is wrong. Don't pad it with praise.
 

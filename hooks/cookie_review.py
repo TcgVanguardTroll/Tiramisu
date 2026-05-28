@@ -9,6 +9,7 @@ Blocks the commit on BLOCKERs unless you override.
 Install:
     t hook
 """
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -83,10 +84,25 @@ def build_override_context():
     )
 
 
+# Match a BLOCKER tag, not the word "blocker" in prose.
+# Catches: [BLOCKER], BLOCKER:, **BLOCKER**, BLOCKER - ...
+# Ignores: "this is not a blocker", "no blockers found"
+BLOCKER_TAG = re.compile(
+    r"(?:\[BLOCKER\]|\*\*BLOCKER\*\*|^BLOCKER[:\s\-–—])",
+    re.MULTILINE,
+)
+
+
+def has_blockers(review):
+    if not review:
+        return False
+    return bool(BLOCKER_TAG.search(review))
+
+
 def extract_blocker_snippet(review):
-    """Pull the first BLOCKER line from the review for logging."""
-    for line in review.splitlines():
-        if "BLOCKER" in line.upper():
+    """Pull the first line containing a BLOCKER tag for logging."""
+    for line in (review or "").splitlines():
+        if BLOCKER_TAG.search(line):
             return line.strip()[:500]
     return None
 
@@ -142,7 +158,7 @@ def main():
     print("-" * 60)
 
     repo = Path.cwd()
-    blockers_present = "BLOCKER" in (review or "").upper()
+    blockers_present = has_blockers(review)
 
     if blockers_present:
         print("\nCookie found blockers. Commit anyway? [y/N] ", end="", flush=True)

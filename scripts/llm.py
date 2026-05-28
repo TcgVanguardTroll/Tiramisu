@@ -6,7 +6,7 @@ _ENV_FILE = Path(os.environ.get("TIRAMISU_HOME", Path.home() / ".tiramisu")) / "
 
 # Update this to the latest model you want to use by default.
 DEFAULT_MODEL  = "claude-sonnet-4-5"
-FAST_MODEL     = "claude-haiku-3-5"
+FAST_MODEL     = "claude-haiku-4-5"
 
 
 def _load_env():
