@@ -3,6 +3,10 @@
 *.env.*
 secrets/
 
+# scratch / temp files
+*.tmp
+.commit_msg.tmp
+
 # runtime state — never commit
 state/
 threads/
