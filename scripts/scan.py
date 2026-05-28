@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke_stream, DEFAULT_MODEL
+from steering import load_steering, detect_languages
 
 SOURCE_EXTENSIONS = {
     ".py", ".js", ".ts", ".tsx", ".jsx",
@@ -107,13 +108,20 @@ def main():
     base = target if target.is_dir() else target.parent
     context, count = build_context(files, base)
 
-    agent_file = ROOT / "agents" / "cookie.md"
-    system = agent_file.read_text(encoding="utf-8") if agent_file.exists() else None
+    languages = detect_languages([str(f) for f in files[:count]])
+    system = load_steering(
+        agent="cookie",
+        languages=languages,
+        include_engineering=True,
+        include_universal_style=True,
+        include_preferences=True,
+    )
 
     skipped = len(files) - count
-    print(f"\nCookie is scanning {count} file(s)", end="")
+    lang_label = ("/".join(languages)) if languages else "no language detected"
+    print(f"\nCookie is scanning {count} file(s) ({lang_label})", end="")
     if skipped:
-        print(f" ({skipped} skipped — over budget)", end="")
+        print(f" -- {skipped} skipped over budget", end="")
     print(f"\n  {target}\n")
     print("-" * 60)
 

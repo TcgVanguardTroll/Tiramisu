@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke_stream, DEFAULT_MODEL
+from steering import load_steering, detect_languages
 
 MAX_DIFF_CHARS     = 12000
 MAX_PER_FILE_CHARS = 4000
@@ -112,10 +113,18 @@ def main():
 
     file_context = build_file_context(files)
 
-    agent_file = ROOT / "agents" / "cookie.md"
-    system = agent_file.read_text(encoding="utf-8") if agent_file.exists() else None
+    languages = detect_languages(files)
+    system = load_steering(
+        agent="cookie",
+        languages=languages,
+        include_engineering=True,
+        include_communication=True,   # PR review = include commit/comment style
+        include_universal_style=True,
+        include_preferences=True,
+    )
 
-    print(f"\nCookie is reviewing your PR (vs {base})\n")
+    lang_label = ("/".join(languages)) if languages else "no language detected"
+    print(f"\nCookie is reviewing your PR (vs {base}) [{lang_label}]\n")
     for line in stat.splitlines()[-5:]:  # last few lines of stat (summary)
         print(f"  {line}")
     print(f"\n  Commits:")

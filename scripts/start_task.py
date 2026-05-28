@@ -22,9 +22,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke_stream, DEFAULT_MODEL
+from steering import load_steering
 
-AGENT_FILE   = ROOT / "agents" / "croissant.md"
-WORKSPACE    = ROOT / "shared_workspace" / "tasks"
+WORKSPACE = ROOT / "shared_workspace" / "tasks"
 
 PROMPT_TEMPLATE = """\
 I'm about to start this task: {task}
@@ -84,7 +84,13 @@ def scope_check(plan: str, system: str):
 
 
 def main():
-    system = AGENT_FILE.read_text(encoding="utf-8")
+    system = load_steering(
+        agent="croissant",
+        languages=None,
+        include_engineering=False,      # Croissant plans scope, doesn't enforce style
+        include_universal_style=False,
+        include_preferences=True,
+    )
 
     print("=" * 60)
     print("🥐  Croissant — Task Scope Session")

@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke_stream, DEFAULT_MODEL
+from steering import load_steering
 import memory
 
 
@@ -154,8 +155,13 @@ def main():
     print("  Madeleine's analysis")
     print("=" * 60 + "\n")
 
-    agent_file = ROOT / "agents" / "madeleine.md"
-    system = agent_file.read_text(encoding="utf-8") if agent_file.exists() else None
+    system = load_steering(
+        agent="madeleine",
+        languages=None,
+        include_engineering=False,
+        include_universal_style=False,
+        include_preferences=True,
+    )
 
     invoke_stream(
         prompt=REFLECT_PROMPT.format(
