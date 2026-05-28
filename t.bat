@@ -17,14 +17,15 @@ IF NOT EXIST "%PYTHON%" (
 )
 
 IF "%1"=="" GOTO usage
-IF /I "%1"=="hook"    GOTO hook
-IF /I "%1"=="task"    GOTO task
-IF /I "%1"=="review"  GOTO review
-IF /I "%1"=="scan"    GOTO scan
-IF /I "%1"=="pr"      GOTO pr
-IF /I "%1"=="learn"   GOTO learn
-IF /I "%1"=="reflect" GOTO reflect
-IF /I "%1"=="help"    GOTO usage
+IF /I "%1"=="hook"      GOTO hook
+IF /I "%1"=="task"      GOTO task
+IF /I "%1"=="review"    GOTO review
+IF /I "%1"=="scan"      GOTO scan
+IF /I "%1"=="pr"        GOTO pr
+IF /I "%1"=="implement" GOTO implement
+IF /I "%1"=="learn"     GOTO learn
+IF /I "%1"=="reflect"   GOTO reflect
+IF /I "%1"=="help"      GOTO usage
 GOTO unknown
 
 :hook
@@ -59,6 +60,13 @@ REM  t pr --post --dry-run      -- generate and show, don't actually post
 %PYTHON% "%TIRAMISU_ROOT%\scripts\pr_review.py" %2 %3 %4 %5
 GOTO end
 
+:implement
+REM  t implement "description"           -- Eclair writes code with full codebase access
+REM  t implement --auto "..."            -- skip confirmation on file writes
+REM  t implement --yes "..."             -- skip ALL confirmations
+%PYTHON% "%TIRAMISU_ROOT%\scripts\implement.py" %2 %3 %4 %5 %6 %7 %8 %9
+GOTO end
+
 :learn
 REM  t learn "text"         -- teach the agents a preference
 REM  t learn list           -- show active preferences
@@ -82,6 +90,7 @@ echo   t review            Cookie reviews staged diff (outside a commit)
 echo   t scan [path]       Cookie reads a file or directory in full
 echo   t pr [base]         Cookie reviews your whole branch vs main
 echo   t pr --post         ...and posts inline comments to the GitHub PR
+echo   t implement "..."   Eclair writes code with full codebase access
 echo   t learn "text"      Teach the agents a preference
 echo   t reflect [days]    Weekly self-improvement report
 echo   t help              This message
