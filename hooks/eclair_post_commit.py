@@ -21,15 +21,25 @@ import memory
 
 
 def main():
+    # Narrow except: FileNotFoundError if git isn't installed, OSError for other
+    # spawn failures. We deliberately do NOT catch KeyboardInterrupt or generic
+    # Exception -- if the unexpected happens, surfacing the error is correct
+    # behavior for a learning-loop hook that is otherwise silent.
     try:
-        final = subprocess.run(
+        result = subprocess.run(
             ["git", "log", "-1", "--pretty=%B"],
-            capture_output=True, text=True
-        ).stdout.strip()
-    except Exception:
+            capture_output=True, text=True, check=False,
+        )
+    except (FileNotFoundError, OSError) as e:
+        print(f"[eclair] post-commit: could not invoke git ({e})", file=sys.stderr)
         sys.exit(0)
 
+    final = (result.stdout or "").strip()
     if not final:
+        # Empty commit message is unusual (detached HEAD, broken repo). Log and
+        # exit cleanly -- a learning hook should never block git.
+        print("[eclair] post-commit: empty commit message; nothing to learn from",
+              file=sys.stderr)
         sys.exit(0)
 
     memory.update_commit_final(Path.cwd(), final)

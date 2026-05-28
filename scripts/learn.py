@@ -38,6 +38,8 @@ Category:"""
 
 
 def categorize(text):
+    """Best-effort category from the LLM. Falls back to 'general' on any failure,
+    but logs the failure so silent miscategorization is debuggable."""
     try:
         result = invoke(
             prompt=CATEGORY_PROMPT.format(text=text),
@@ -45,10 +47,13 @@ def categorize(text):
             max_tokens=10,
             temperature=0.0,
         ).strip().lower().split()[0].strip(":.,")
-        valid = {"review", "commit_msg", "task_scope", "style", "general"}
-        return result if result in valid else "general"
-    except Exception:
+    except Exception as e:
+        print(f"[learn] warning: categorization failed ({type(e).__name__}: {e}); "
+              f"using 'general'", file=sys.stderr)
         return "general"
+
+    valid = {"review", "commit_msg", "task_scope", "style", "general"}
+    return result if result in valid else "general"
 
 
 def cmd_add(text):

@@ -1,0 +1,57 @@
+Cut Amazon-era legacy + fix bugs Cookie flagged
+
+Two passes in one commit because they were tangled:
+
+## Cleanup -- remove unused legacy
+
+The portable Tiramisu CLI does not use the old multi-agent dispatch /
+knowledge-indexing / queue runner systems. They lived as dead weight,
+broke `t scan` reports with noise, and confused new readers about what
+the system actually is.
+
+Deleted:
+- second_brain/ (entire dir: brain, cli, memory, reranker, user_profile,
+  index_personalization, kb_report, test_kb_hits, type_config)
+- queue/ (runner.py, queue.json, state.json) -- Amazon-era task queue
+- ingest-ide-sessions/, ingest-repos/ -- Rust subprojects for old session
+  log ingestion
+- knowledge/, logs/ -- empty placeholder dirs
+- hooks/auto_index.py, check_candidates.py, load_memories.py,
+  ingest_sessions.py -- all called the old second_brain CLI
+- scripts/fetch_github_trending.py, ingest_gentoomen.py,
+  extract_session_learnings.py -- orphaned utilities depending on
+  the old indexing pipeline
+- setup.sh, setup.ps1, schema.sql, tiramisu.db -- old install +
+  schema for tables we don't use
+- agent-architecture.md, agent-config-template.md, memory-system.md,
+  github-publishing-plan.md -- Amazon-era design docs
+
+Rewrote (planned but not yet wired into CLI):
+- agents/brioche.md  (HR / agent creator)
+- agents/cannoli.md  (researcher)
+- agents/mochi.md    (brainstorm)
+  All stripped of second_brain memory protocols and Amazon-era table
+  references. Each marked "planned -- not yet wired into the t CLI."
+
+## Bug fixes Cookie flagged in t scan
+
+scripts/llm.py
+- _load_env(): wrap file read in try/except. Crashing on corrupted .env
+  meant zero-output failures on every t invocation.
+- Document the FAST_MODEL vs DEFAULT_MODEL distinction (cost/latency vs
+  quality tier).
+- Document the prompt-caching tradeoff in invoke / invoke_stream.
+
+scripts/learn.py
+- categorize(): narrow the bare except; log the failure to stderr so
+  silent miscategorization is debuggable.
+
+hooks/eclair_post_commit.py
+- Replace bare except with FileNotFoundError/OSError. The previous
+  catch-all swallowed KeyboardInterrupt and would hide real breakage.
+- Empty commit message branch now logs to stderr instead of silently
+  exiting.
+
+Net diff: 4500+ lines removed, ~60 added.
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
