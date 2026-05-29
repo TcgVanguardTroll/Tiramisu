@@ -1,0 +1,26 @@
+# Copy this file to profile.yaml and fill in your details.
+# profile.yaml is gitignored — never committed.
+
+name: Your Name
+alias: youralias
+role: "Your role and team"
+org: "Your org / company"
+
+team:
+  your_team:
+    - teammate1
+    - teammate2
+
+active_projects:
+  - name: project-name
+    priority: high
+    role: engineering owner
+
+skills:
+  - Python
+  - Java
+  - AWS
+
+preferences:
+  communication: async
+  review_style: thorough
