@@ -25,10 +25,13 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -962,11 +965,68 @@ def repo_library_path(cwd: Path | None = None) -> Path:
     return (cwd or Path.cwd()) / ".tiramisu" / "library"
 
 
+@contextmanager
+def _accessible_path(path: Path):
+    """
+    Yield a path that we can actually read.
+
+    On Windows, files under iCloud Drive (and OneDrive "Files On-Demand")
+    may exist on disk only as cloud-placeholders -- their st_size etc. look
+    normal but `f.read()` fails with OSError [Errno 22] "Invalid argument"
+    until they get materialized.
+
+    If the direct read works, we yield the original path. If we hit the
+    placeholder error, we copy via shutil (which goes through Windows
+    file APIs that trigger materialization) into a temp file and yield
+    that instead. Temp file is cleaned up on context exit.
+    """
+    # Probe: try to read a single byte directly.
+    try:
+        with path.open("rb") as f:
+            f.read(1)
+        yield path
+        return
+    except OSError as e:
+        # Errno 22 is the iCloud-on-Windows "cloud-only placeholder" symptom.
+        # ENOENT, PermissionError, etc. should propagate untouched.
+        if e.errno != 22:
+            raise
+
+    print(f"  [tiramisu] {path.name} is a cloud-only placeholder; "
+          f"materializing to local temp...", flush=True)
+
+    tmp = tempfile.NamedTemporaryFile(suffix=path.suffix, delete=False)
+    tmp.close()
+    tmp_path = Path(tmp.name)
+    try:
+        try:
+            shutil.copy2(str(path), str(tmp_path))
+        except OSError:
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
+            raise OSError(
+                f"\n  Could not materialize iCloud / OneDrive placeholder:\n"
+                f"    {path}\n"
+                f"  Fix: in File Explorer, right-click the file and choose\n"
+                f"  'Always keep on this device'. Wait for the green check,\n"
+                f"  then re-run the same command.\n"
+            )
+        yield tmp_path
+    finally:
+        try:
+            tmp_path.unlink()
+        except Exception:
+            pass
+
+
 def _file_sha256(path: Path) -> str:
     h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
+    with _accessible_path(path) as p:
+        with p.open("rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
     return h.hexdigest()
 
 
@@ -1026,7 +1086,8 @@ def _pdf_page_count(path: Path) -> int | None:
     """Return total pages via pypdf. None if pypdf missing or PDF unreadable."""
     try:
         from pypdf import PdfReader
-        return len(PdfReader(str(path)).pages)
+        with _accessible_path(path) as p:
+            return len(PdfReader(str(p)).pages)
     except ImportError:
         return None
     except Exception as e:
@@ -1049,46 +1110,59 @@ def _split_pdf(path: Path, max_pages: int = PDF_SPLIT_PAGE_TARGET) -> list[Path]
         return []
 
     try:
-        reader = PdfReader(str(path))
+        with _accessible_path(path) as local:
+            reader = PdfReader(str(local))
+            total = len(reader.pages)
+            if total <= max_pages and local.stat().st_size <= PDF_SPLIT_SIZE_TARGET:
+                # Small enough; yield the materialized copy so downstream reads
+                # don't re-hit the cloud-only error. But the temp file will be
+                # cleaned up when we exit this context -- so we need to copy
+                # it out to a stable location for the caller.
+                # Simplest: copy to split_dir even though it's "one chunk".
+                if local is path:
+                    return [path]
+                # local is a temp; promote it so it survives the context exit
+                split_dir = RESEARCH_DIR / "_split_tmp"
+                split_dir.mkdir(parents=True, exist_ok=True)
+                stable = split_dir / f"{path.stem}__local.pdf"
+                shutil.copy2(str(local), str(stable))
+                return [stable]
+
+            split_dir = RESEARCH_DIR / "_split_tmp"
+            split_dir.mkdir(parents=True, exist_ok=True)
+
+            chunk_count = (total + max_pages - 1) // max_pages
+            chunks: list[Path] = []
+            for i in range(chunk_count):
+                start = i * max_pages
+                end   = min(start + max_pages, total)
+
+                writer = PdfWriter()
+                for page_idx in range(start, end):
+                    writer.add_page(reader.pages[page_idx])
+
+                chunk_name = f"{path.stem}__part{i+1}of{chunk_count}.pdf"
+                chunk_path = split_dir / chunk_name
+                try:
+                    with chunk_path.open("wb") as f:
+                        writer.write(f)
+                    chunks.append(chunk_path)
+                except Exception as e:
+                    print(f"[cannoli] failed to write chunk {chunk_name}: {e}",
+                          file=sys.stderr)
+
+            return chunks
     except Exception as e:
         print(f"[cannoli] could not open {path.name} for splitting: {e}",
               file=sys.stderr)
         return []
 
-    total = len(reader.pages)
-    if total <= max_pages and path.stat().st_size <= PDF_SPLIT_SIZE_TARGET:
-        return [path]
-
-    split_dir = RESEARCH_DIR / "_split_tmp"
-    split_dir.mkdir(parents=True, exist_ok=True)
-
-    chunk_count = (total + max_pages - 1) // max_pages
-    chunks: list[Path] = []
-    for i in range(chunk_count):
-        start = i * max_pages
-        end   = min(start + max_pages, total)
-
-        writer = PdfWriter()
-        for page_idx in range(start, end):
-            writer.add_page(reader.pages[page_idx])
-
-        chunk_name = f"{path.stem}__part{i+1}of{chunk_count}.pdf"
-        chunk_path = split_dir / chunk_name
-        try:
-            with chunk_path.open("wb") as f:
-                writer.write(f)
-            chunks.append(chunk_path)
-        except Exception as e:
-            print(f"[cannoli] failed to write chunk {chunk_name}: {e}",
-                  file=sys.stderr)
-
-    return chunks
-
 
 def _ingest_pdf_chunk(chunk_path: Path, display_name: str,
                       chunk_label: str = "") -> str:
     """Send one PDF chunk to Anthropic as a document block. Returns section text."""
-    pdf_b64 = base64.standard_b64encode(chunk_path.read_bytes()).decode("ascii")
+    with _accessible_path(chunk_path) as p:
+        pdf_b64 = base64.standard_b64encode(p.read_bytes()).decode("ascii")
 
     from llm import _client, DEFAULT_MODEL, _log_api_usage
     chunk_note = (f"\n\n(This is {chunk_label} of a larger document. "
@@ -1193,7 +1267,8 @@ def _ingest_pdf(path: Path) -> str:
 def _ingest_text_file(path: Path) -> str:
     """Read a text-based file (.md, .txt, .rst) and summarize via Sonnet."""
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        with _accessible_path(path) as p:
+            text = p.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
         return f"### {path.name}\n**Relevance:** n/a\n\nCould not read: {e}\n"
 
