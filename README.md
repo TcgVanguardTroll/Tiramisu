@@ -6,16 +6,18 @@ A personal multi-agent dev system. A crew of pastry-named pets that scope your w
 
 Every agent is named after a pastry that matches their fur.
 
-| Agent | Pet | Role |
-|-------|-----|------|
-| 🐕 **Tiramisu** | Red tri mini American Shepherd | Orchestrator — herds the rest |
-| 🐾 **Éclair** | Sleek black ferret | SDE — writes code with full codebase access |
-| 🐈 **Cookie** | Tortoiseshell cat | Reviewer — judgmental, zero tolerance for sloppiness |
-| 🐕 **Croissant** | Corgi | PM — scopes tasks, defines acceptance criteria |
-| 🐱 **Madeleine** | Ginger tabby | Knowledge keeper — surfaces patterns from accumulated data |
-| 🐶 **Cannoli** | Beagle | Research (planned) |
-| 🐰 **Mochi** | White lop rabbit | Brainstorm (planned) |
-| 🦮 **Brioche** | Golden retriever | HR — onboards new agents (planned) |
+Every agent has a unique pet+pastry pair — no duplicates. Source of truth: `scripts/personas.py`.
+
+| Agent | Sigil | Pet | Role |
+|-------|:-----:|-----|------|
+| **Tiramisu** | 🐶🍮 | Red tri mini American Shepherd | Orchestrator — herds the rest |
+| **Éclair** | 🦡🍫 | Sleek black ferret (mustelid kin: badger) | SDE — writes code with full codebase access |
+| **Cookie** | 🐈🍪 | Tortoiseshell cat | Reviewer — judgmental, zero tolerance for sloppiness |
+| **Croissant** | 🐕🥐 | Corgi | PM — scopes tasks, defines acceptance criteria |
+| **Madeleine** | 🐱🧁 | Ginger tabby | Knowledge keeper — surfaces patterns from accumulated data |
+| **Cannoli** | 🐕‍🦺🍩 | Beagle | Research (planned) |
+| **Mochi** | 🐰🍡 | White lop rabbit | Brainstorm (planned) |
+| **Brioche** | 🦮🍞 | Golden retriever | HR — onboards new agents (planned) |
 
 ---
 
@@ -41,19 +43,19 @@ With no args, you enter an interactive REPL:
 ```
 $ tiramisu
 
-🐕  Tiramisu — interactive mode
-    Type a request or question. The right agent will run.
-    Built-ins: 'help' for routes, 'exit' / Ctrl+D to leave.
+🐶🍮  Tiramisu — interactive mode
+      Type a request or question. The right agent will run.
+      Built-ins: 'help' for routes, 'exit' / Ctrl+D to leave.
 
-tiramisu > scope adding dark mode
+tiramisu » scope adding dark mode
   ->  t task
-  [Croissant streams a scope plan]
+  [🐕🥐  Croissant streams a scope plan]
 
-tiramisu > implement the dark mode toggle
+tiramisu » implement the dark mode toggle
   ->  t implement
-  [Éclair writes the code]
+  [🦡🍫  Éclair writes the code]
 
-tiramisu > exit
+tiramisu » exit
 ```
 
 REPL built-ins: `help`, `exit` / `quit` / `q`, `clear`. Ctrl+C kills a running subcommand but keeps the REPL alive. Ctrl+D exits the REPL.
@@ -85,8 +87,8 @@ If you already know which agent you want, skip the router:
 
 After `t hook` in a repo, every `git commit` triggers:
 
-1. 🐾 **Éclair drafts the commit message** from your staged diff, using your last 5 commits as few-shot examples so the voice matches yours.
-2. 🐈 **Cookie reviews** the diff plus the full content of each changed file. She has your engineering principles, code style for the relevant languages, and your learned preferences in her system prompt. She halts on `[BLOCKER]` and prompts to override.
+1. 🦡🍫 **Éclair drafts the commit message** from your staged diff, using your last 5 commits as few-shot examples so the voice matches yours.
+2. 🐈🍪 **Cookie reviews** the diff plus the full content of each changed file. She has your engineering principles, code style for the relevant languages, and your learned preferences in her system prompt. She halts on `[BLOCKER]` and prompts to override.
 3. 📊 **Post-commit captures** the final message you actually shipped, so Éclair learns whether her drafts are landing as-is or getting heavily edited.
 
 Skip for one commit: `git commit --no-verify`.

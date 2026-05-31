@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import _client, DEFAULT_MODEL
 from steering import load_steering
+from personas import pair as persona_pair, pet as persona_pet
 
 from rich.console import Console
 from rich.panel import Panel
@@ -236,7 +237,7 @@ def render_banner():
         "[dim]She does NOT edit code -- for that, exit and run `t implement`.[/dim]\n"
         "[dim]Type[/dim] [cyan]exit[/cyan][dim] or Ctrl+D to leave chat.[/dim]"
     )
-    console.print(Panel(body, title="🐕  Tiramisu — chat", border_style="cyan", padding=(0, 2)))
+    console.print(Panel(body, title=f"{persona_pair('tiramisu')}  Tiramisu — chat", border_style="cyan", padding=(0, 2)))
     console.print()
 
 
@@ -261,7 +262,7 @@ def chat_turn(messages, system, client):
                 first_text = True
                 for text in stream.text_stream:
                     if first_text:
-                        console.print("[bold magenta]🐕  [/bold magenta]", end="")
+                        console.print(f"[bold magenta]{persona_pet('tiramisu')}  [/bold magenta]", end="")
                         first_text = False
                     console.print(text, end="")
                 if not first_text:
@@ -374,7 +375,7 @@ def main():
             console.print("\n[yellow][interrupted -- back at chat prompt][/yellow]")
         console.print()
 
-    console.print("[bold cyan]🐕  exiting chat[/bold cyan]\n")
+    console.print(f"[bold cyan]{persona_pair('tiramisu')}  exiting chat[/bold cyan]\n")
 
 
 if __name__ == "__main__":

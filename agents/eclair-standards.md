@@ -80,7 +80,7 @@ The PR title MUST also follow the `type(scope): summary` format.
 ### AI Footer
 Every comment posted on PRs or tickets must end with:
 ```
-— Tiramisu 🍮🐶 (AI assistant)
+— Tiramisu 🐶🍮 (AI assistant)
 ```
 
 ### PR Description Integrity

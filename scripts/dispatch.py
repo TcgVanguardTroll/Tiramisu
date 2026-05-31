@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke, FAST_MODEL
+from personas import pair as persona_pair, pet as persona_pet, color as persona_color
 
 # Rich + prompt_toolkit are required at runtime. The dispatcher refuses to start
 # without them, so import failures are loud, not silent.
@@ -197,7 +198,7 @@ def render_banner():
         "[dim]Built-ins:[/dim] help, exit, clear   "
         "[dim]Keys:[/dim] up/down history, Tab complete, Esc+Enter multi-line"
     )
-    console.print(Panel(body, title="🐕  Tiramisu", border_style="cyan", padding=(0, 2)))
+    console.print(Panel(body, title=f"{persona_pair('tiramisu')}  Tiramisu", border_style="cyan", padding=(0, 2)))
 
 
 def render_routes():
@@ -265,7 +266,7 @@ def repl():
             console.print("\n[yellow][interrupted -- back at the prompt][/yellow]\n")
             continue
 
-    console.print("[bold cyan]🐕  bye[/bold cyan]\n")
+    console.print(f"[bold cyan]{persona_pair('tiramisu')}  bye[/bold cyan]\n")
 
 
 def main():
@@ -284,7 +285,7 @@ def main():
         cmd = route(user_input)
 
     preview = user_input if len(user_input) <= 60 else user_input[:60] + "..."
-    console.print(f"\n[bold cyan]🐕  Tiramisu[/bold cyan]  [dim]→[/dim]  "
+    console.print(f"\n[bold cyan]{persona_pair('tiramisu')}  Tiramisu[/bold cyan]  [dim]→[/dim]  "
                   f"[bold cyan]t {cmd}[/bold cyan]    [dim]({preview!r})[/dim]\n")
 
     sys.exit(run_subcommand(cmd, user_input))

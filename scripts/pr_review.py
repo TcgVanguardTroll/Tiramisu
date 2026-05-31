@@ -148,7 +148,7 @@ def format_comment_body(c):
     severity = (c.get("severity") or "").upper()
     tag = SEVERITY_TAGS.get(severity, f"**{severity or 'note'}**")
     body = (c.get("body") or "").strip()
-    return f"{tag}\n\n{body}\n\n_— Cookie 🐱 (Tiramisu AI reviewer)_"
+    return f"{tag}\n\n{body}\n\n_— Cookie 🐈🍪 (Tiramisu AI reviewer)_"
 
 
 def validate_comments(comments, changed_files):

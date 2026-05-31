@@ -93,7 +93,7 @@ def main():
     )
 
     print("=" * 60)
-    print("🥐  Croissant — Task Scope Session")
+    print("🐕🥐  Croissant — Task Scope Session")
     print("=" * 60)
     print()
 
@@ -113,7 +113,7 @@ def main():
         print("No task provided. Exiting.")
         sys.exit(0)
 
-    print("\n[croissant] 🥐 Defining scope...\n")
+    print("\n[croissant] 🐕🥐 Defining scope...\n")
     print("-" * 60)
 
     plan = invoke_stream(
@@ -146,7 +146,7 @@ def main():
     if check == "y":
         scope_check(plan, system)
 
-    print("\n🥐  Scope defined. Stick to it. Good luck.\n")
+    print("\n🐕🥐  Scope defined. Stick to it. Good luck.\n")
 
 
 if __name__ == "__main__":
