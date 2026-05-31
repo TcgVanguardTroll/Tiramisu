@@ -23,6 +23,7 @@ IF /I "%1"=="review"    GOTO review
 IF /I "%1"=="scan"      GOTO scan
 IF /I "%1"=="pr"        GOTO pr
 IF /I "%1"=="implement" GOTO implement
+IF /I "%1"=="chat"      GOTO chat
 IF /I "%1"=="learn"     GOTO learn
 IF /I "%1"=="reflect"   GOTO reflect
 IF /I "%1"=="help"      GOTO usage
@@ -67,6 +68,12 @@ REM  t implement --yes "..."             -- skip ALL confirmations
 %PYTHON% "%TIRAMISU_ROOT%\scripts\implement.py" %2 %3 %4 %5 %6 %7 %8 %9
 GOTO end
 
+:chat
+REM  t chat                              -- conversational read-only mode (memory + tools)
+REM  t chat <initial question>           -- start with a kicked-off question
+%PYTHON% "%TIRAMISU_ROOT%\scripts\chat.py" %2 %3 %4 %5 %6 %7 %8 %9
+GOTO end
+
 :learn
 REM  t learn "text"         -- teach the agents a preference
 REM  t learn list           -- show active preferences
@@ -91,6 +98,7 @@ echo   t scan [path]       Cookie reads a file or directory in full
 echo   t pr [base]         Cookie reviews your whole branch vs main
 echo   t pr --post         ...and posts inline comments to the GitHub PR
 echo   t implement "..."   Eclair writes code with full codebase access
+echo   t chat [question]   Conversational mode -- read-only, remembers context
 echo   t learn "text"      Teach the agents a preference
 echo   t reflect [days]    Weekly self-improvement report
 echo   t help              This message

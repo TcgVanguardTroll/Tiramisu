@@ -38,6 +38,10 @@ case "$cmd" in
         # t implement "description" [--auto] [--yes]
         "$PYTHON" "$TIRAMISU_ROOT/scripts/implement.py" "$@"
         ;;
+    chat)
+        # t chat [initial question]
+        "$PYTHON" "$TIRAMISU_ROOT/scripts/chat.py" "$@"
+        ;;
     learn)
         # t learn "text" | list | forget <id>
         "$PYTHON" "$TIRAMISU_ROOT/scripts/learn.py" "$@"
@@ -58,6 +62,7 @@ case "$cmd" in
   t pr [base]         Cookie reviews your whole branch vs main
   t pr --post         ...and posts inline comments to the GitHub PR
   t implement "..."   Eclair writes code with full codebase access
+  t chat [question]   Conversational mode -- read-only, remembers context
   t learn "text"      Teach the agents a preference
   t reflect [days]    Weekly self-improvement report
   t help              This message

@@ -52,6 +52,7 @@ ROUTES = {
     "scan":      "read the current directory in full to look for issues; no commit involved",
     "review":    "review the currently staged diff right before a commit",
     "pr":        "review the whole current branch versus main (final pre-merge check)",
+    "chat":      "have a conversation: ask questions, explain code, think out loud, plan -- read-only, with memory",
     "learn":     "record a new user preference for the agents to remember",
     "reflect":   "produce a weekly insights report from accumulated data",
     "help":      "show the command list / general help",
@@ -69,6 +70,10 @@ Examples of correct routing:
   "is my code clean"                  -> scan
   "review my staged diff"             -> review
   "check this PR"                     -> pr
+  "what does this codebase do"        -> chat
+  "explain the auth flow"             -> chat
+  "how would I structure X"           -> chat
+  "i want to think through Y"         -> chat
   "remember I like guard clauses"     -> learn
   "show me my patterns"               -> reflect
   "what can you do"                   -> help
@@ -126,7 +131,7 @@ def run_subcommand(cmd: str, user_input: str) -> int:
         console.print(f"[red][tiramisu][/red] missing dispatcher: {t_dispatcher}")
         return 1
 
-    takes_input = {"task", "implement", "learn"}
+    takes_input = {"task", "implement", "learn", "chat"}
 
     if cmd in takes_input:
         args = [str(t_dispatcher), cmd, user_input]
