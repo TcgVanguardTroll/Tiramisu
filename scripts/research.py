@@ -239,7 +239,8 @@ def _fetch(url: str) -> str:
         headers={"User-Agent": "Tiramisu-Cannoli/1.0 (+research)"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT,
+                                    context=_ssl_context()) as resp:
             data = resp.read()
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
         return f"[error fetching {url}: {e}]"
@@ -470,6 +471,29 @@ MAX_PER_BUCKET = 3  # how many candidates to take from each topic / query
 
 GITHUB_API_BASE = "https://api.github.com"
 HN_API_BASE     = "https://hn.algolia.com/api/v1"
+ARXIV_API_BASE  = "http://export.arxiv.org/api/query"
+
+# arxiv queries -- defaults baked in, user can override via
+# ~/.tiramisu/arxiv_queries.json (same pattern as sources.json).
+# Syntax: arxiv search strings, URL-encoded boolean operators allowed.
+DEFAULT_ARXIV_QUERIES = [
+    "abs:prompt+engineering+AND+abs:agent",
+    "abs:LLM+AND+abs:code+review",
+    "abs:tool+use+AND+abs:language+model",
+]
+ARXIV_QUERIES_FILE = TIRAMISU_HOME / "arxiv_queries.json"
+
+
+def _ssl_context():
+    """SSL context that works on Windows where Python's default cert store
+    often lacks modern CA roots. Uses certifi (already shipped via the
+    anthropic dep) when available; falls back to the system default."""
+    import ssl
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
 
 
 def _http_get_json(url: str) -> dict | None:
@@ -480,7 +504,8 @@ def _http_get_json(url: str) -> dict | None:
                  "Accept": "application/vnd.github+json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT,
+                                    context=_ssl_context()) as resp:
             return json.loads(resp.read().decode("utf-8", errors="replace"))
     except Exception as e:
         print(f"[cannoli] GET {url} failed: {e}", file=sys.stderr)
@@ -501,6 +526,71 @@ def _fetch_hn(query: str) -> list[dict]:
     url = f"{HN_API_BASE}/search?query={enc}&tags=story&hitsPerPage=5&numericFilters=points>20"
     data = _http_get_json(url)
     return (data or {}).get("hits", [])[:MAX_PER_BUCKET]
+
+
+def _load_arxiv_queries() -> list[str]:
+    """Read user's arxiv_queries.json or fall back to DEFAULT_ARXIV_QUERIES.
+    Same precedence pattern as sources.json (user file replaces defaults)."""
+    if ARXIV_QUERIES_FILE.exists():
+        try:
+            data = json.loads(ARXIV_QUERIES_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                clean = [q for q in data if isinstance(q, str) and q.strip()]
+                if clean:
+                    return clean
+        except Exception as e:
+            print(f"[cannoli] couldn't parse {ARXIV_QUERIES_FILE}: {e}",
+                  file=sys.stderr)
+    return list(DEFAULT_ARXIV_QUERIES)
+
+
+def _search_arxiv(query: str, max_results: int = MAX_PER_BUCKET) -> list[dict]:
+    """Query the arxiv API. Returns papers as dicts. No API key required."""
+    import xml.etree.ElementTree as ET
+
+    url = (f"{ARXIV_API_BASE}?search_query={query}"
+           f"&max_results={max_results}"
+           f"&sortBy=submittedDate&sortOrder=descending")
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "Tiramisu-Cannoli/1.0 (+research)"})
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT,
+                                    context=_ssl_context()) as resp:
+            xml_data = resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        print(f"[cannoli] arxiv query failed ({query}): {e}", file=sys.stderr)
+        return []
+
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    try:
+        root = ET.fromstring(xml_data)
+    except Exception as e:
+        print(f"[cannoli] arxiv response parse error: {e}", file=sys.stderr)
+        return []
+
+    papers = []
+    for entry in root.findall("atom:entry", ns):
+        id_el      = entry.find("atom:id",        ns)
+        title_el   = entry.find("atom:title",     ns)
+        summary_el = entry.find("atom:summary",   ns)
+        pub_el     = entry.find("atom:published", ns)
+        if id_el is None or title_el is None:
+            continue
+
+        # Extract bare arxiv id from URL like http://arxiv.org/abs/2401.12345v1
+        full_id  = (id_el.text or "").rsplit("/", 1)[-1]
+        # Strip version suffix (v1, v2, etc.) so the PDF URL points to current
+        arxiv_id = full_id.split("v")[0] if "v" in full_id else full_id
+
+        papers.append({
+            "arxiv_id": arxiv_id,
+            "title":    (title_el.text or "").strip().replace("\n", " "),
+            "summary":  ((summary_el.text or "").strip() if summary_el is not None else ""),
+            "published":((pub_el.text or "")[:10] if pub_el is not None else ""),
+            "pdf_url":  f"https://arxiv.org/pdf/{arxiv_id}.pdf",
+            "abs_url":  f"https://arxiv.org/abs/{arxiv_id}",
+        })
+    return papers
 
 
 CANDIDATE_PROMPT = """\
@@ -587,6 +677,167 @@ def _summarize_candidate(c: dict) -> str:
         )
 
 
+ARXIV_CANDIDATE_PROMPT = """\
+You are Cannoli, the Tiramisu researcher. You found an arxiv paper that
+*might* be worth grabbing into the user's library (where Tiramisu would
+read it on the next weekly run). Decide if it is.
+
+PAPER
+  Title:     {name}
+  arxiv ID:  {arxiv_id}
+  Submitted: {published}
+
+ABSTRACT
+{abstract}
+
+The user's existing watched sources cover: Anthropic API docs, Cookbook,
+aider, Python release notes. They care about AI-assisted code review,
+prompt engineering, agent loops, tool use, Python idioms.
+
+Output exactly this markdown:
+
+### {name}
+**Relevance:** <1-5 -- 5 = grab today, 3 = maybe, 1 = ignore>
+**arxiv ID:** {arxiv_id}
+**Why:** <2 sentences -- what the paper actually argues and whether
+reading it would inform Tiramisu's steering. Be honest. "Skip" is fine.>
+**Grab command:** `t research grab {arxiv_id}`   (if relevance >= 3,
+                  otherwise write "(skip -- relevance too low)")
+
+Rules:
+- A theory paper with no concrete recommendations -> usually 1-2.
+- A paper with patterns / measurements directly applicable to agent
+  design or code review -> can be 3-5.
+- Don't pad. If the abstract is generic AI-hype, mark relevance 1.
+"""
+
+
+def _summarize_arxiv_candidate(c: dict) -> str:
+    """Summarize an arxiv paper using its abstract (no PDF fetch needed).
+    Output matches the candidate format with a Grab command line."""
+    try:
+        return invoke(
+            prompt=ARXIV_CANDIDATE_PROMPT.format(
+                name=c["name"],
+                arxiv_id=c["arxiv_id"],
+                published=c["metric"].replace("submitted ", ""),
+                abstract=c["preview"][:2000],
+            ),
+            model=FAST_MODEL,
+            max_tokens=350,
+            temperature=0.2,
+        ).strip() + "\n"
+    except Exception as e:
+        return (f"### {c['name']}\n"
+                f"**Relevance:** n/a\n\n"
+                f"**arxiv ID:** {c['arxiv_id']}\n\n"
+                f"Summarization failed: {type(e).__name__}: {e}\n")
+
+
+# -------- grab: pull an arxiv paper into the library --------
+
+
+def _arxiv_library_dir() -> Path:
+    """Path of the arxiv subdir under the user library. Computed lazily because
+    USER_LIBRARY is defined further down in this file."""
+    return USER_LIBRARY / "arxiv"
+
+
+def _normalize_arxiv_id(raw: str) -> str:
+    """Accept '2401.12345', '2401.12345v3', 'http://arxiv.org/abs/2401.12345',
+    or 'arxiv:2401.12345' and return the bare ID."""
+    s = raw.strip()
+    # Strip URL prefixes
+    for prefix in ("https://arxiv.org/abs/", "http://arxiv.org/abs/",
+                   "https://arxiv.org/pdf/", "http://arxiv.org/pdf/",
+                   "arxiv:", "arXiv:"):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+    s = s.rstrip(".pdf").rstrip("/")
+    # Strip version suffix
+    if "v" in s and s.split("v")[-1].isdigit():
+        s = s.rsplit("v", 1)[0]
+    return s
+
+
+def grab_paper(arxiv_id_raw: str) -> Path | None:
+    """Download an arxiv PDF into ~/.tiramisu/library/arxiv/<id>.pdf.
+    The library ingestion path will pick it up on the next run-all."""
+    arxiv_id = _normalize_arxiv_id(arxiv_id_raw)
+    if not arxiv_id:
+        print(f"[grab] could not parse arxiv id: {arxiv_id_raw!r}")
+        return None
+
+    arxiv_dir = _arxiv_library_dir()
+    arxiv_dir.mkdir(parents=True, exist_ok=True)
+    target = arxiv_dir / f"{arxiv_id}.pdf"
+    if target.exists():
+        kb = target.stat().st_size / 1024
+        print(f"  already have: {target}  ({kb:.0f} KB)")
+        return target
+
+    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+    print(f"  downloading: {pdf_url}")
+    req = urllib.request.Request(
+        pdf_url,
+        headers={"User-Agent": "Tiramisu-Cannoli/1.0 (+research)"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60,
+                                    context=_ssl_context()) as resp:
+            data = resp.read()
+    except Exception as e:
+        print(f"  [error] download failed: {e}")
+        return None
+
+    target.write_bytes(data)
+    kb = target.stat().st_size / 1024
+    print(f"  saved: {target}  ({kb:.0f} KB)")
+    print(f"  -> Cannoli will ingest this on the next `t research all` "
+          f"(or weekly background run).")
+    return target
+
+
+def grab_all_from_latest() -> int:
+    """Find every `t research grab <id>` command in the newest candidates
+    file and execute them. Returns the count actually downloaded."""
+    import re
+
+    files = sorted(
+        RESEARCH_DIR.glob("candidates_*.md"),
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )
+    if not files:
+        print("\nNo candidates file found. Run `t research discover` first.\n")
+        return 0
+
+    latest = files[0]
+    text = latest.read_text(encoding="utf-8")
+
+    # Grab commands look like: `t research grab 2401.12345`
+    # Skip placeholders like "(skip -- relevance too low)"
+    raw_ids = re.findall(r"t research grab\s+([0-9][^\s`)]+)", text)
+    ids = []
+    for r in raw_ids:
+        norm = _normalize_arxiv_id(r)
+        if norm and norm not in ids:
+            ids.append(norm)
+
+    if not ids:
+        print(f"\nNo graspable arxiv papers in {latest.name}\n")
+        return 0
+
+    print(f"\nGrabbing {len(ids)} paper(s) from {latest.name}:\n")
+    n = 0
+    for aid in ids:
+        if grab_paper(aid):
+            n += 1
+    print(f"\n  done: {n}/{len(ids)} downloaded.")
+    print(f"  Run `t research all` (or wait for next weekly background run) "
+          f"to ingest them into findings.\n")
+    return n
+
+
 def discover(quiet: bool = False) -> Path | None:
     """
     Pull candidates from GitHub Trending + HackerNews, summarize each via
@@ -627,6 +878,23 @@ def discover(quiet: bool = False) -> Path | None:
                 "metric":         f"{story.get('points', 0)} points",
             })
 
+    # arxiv papers (uses the abstract directly -- no PDF fetch during discovery)
+    import time
+    for query in _load_arxiv_queries():
+        log(f"  ↳ arxiv search: {query}")
+        for paper in _search_arxiv(query, max_results=MAX_PER_BUCKET):
+            candidates.append({
+                "discovered_via": f"arxiv search: {query}",
+                "name":           paper["title"],
+                "url":            paper["abs_url"],
+                "preview":        paper["summary"][:300],
+                "metric":         f"submitted {paper['published']}",
+                "arxiv_id":       paper["arxiv_id"],
+                "pdf_url":        paper["pdf_url"],
+            })
+        # arxiv asks for ~3s between requests; be a good citizen
+        time.sleep(3)
+
     # Dedupe by URL
     seen = set()
     unique = []
@@ -642,7 +910,11 @@ def discover(quiet: bool = False) -> Path | None:
     sections: list[str] = []
     by_source: dict[str, list[str]] = {}
     for c in candidates:
-        summary = _summarize_candidate(c)
+        # arxiv has its own prompt + uses the abstract instead of fetching PDF
+        if "arxiv_id" in c:
+            summary = _summarize_arxiv_candidate(c)
+        else:
+            summary = _summarize_candidate(c)
         by_source.setdefault(c["discovered_via"], []).append(summary)
 
     for src, sums in by_source.items():
@@ -1251,6 +1523,18 @@ def main():
             print("Usage: t research ingest <file-or-directory>")
             sys.exit(1)
         ingest_path_cli(args.rest[0], quiet=args.quiet)
+    elif args.action == "grab":
+        if not args.rest:
+            print("Usage:")
+            print("  t research grab <arxiv-id>    -- pull one paper")
+            print("  t research grab --all         -- pull every paper from")
+            print("                                   the latest candidates file")
+            sys.exit(1)
+        target = args.rest[0]
+        if target in ("--all", "-a", "all"):
+            grab_all_from_latest()
+        else:
+            grab_paper(target)
     elif args.action == "library":
         library_list()
     elif args.action == "all":
@@ -1265,8 +1549,8 @@ def main():
         _sources_subcmd(args.rest)
     else:
         print(f"Unknown action: {args.action!r}")
-        print("Valid: show | run | discover | ingest <path> | library | "
-              "all | mute | list | sources [...]")
+        print("Valid: show | run | discover | grab <id|--all> | "
+              "ingest <path> | library | all | mute | list | sources [...]")
         sys.exit(1)
 
 

@@ -139,6 +139,8 @@ Run `t research` to view the findings (rendered as Markdown), which marks them a
 | `t research run` | Scan watched sources now for new deltas |
 | `t research discover` | Scout GitHub Trending + HackerNews for new candidate sources |
 | `t research ingest <path>` | Manually ingest a PDF / `.md` / `.txt` / `.rst` file or directory |
+| `t research grab <arxiv-id>` | Download an arxiv paper into your library (auto-ingests on next run) |
+| `t research grab --all` | Download every arxiv paper from the latest candidates file |
 | `t research library` | List files in your library + ingestion status |
 | `t research all` | Run + discover + ingest-library in one shot |
 | `t research mute` | Mark everything pending as read without showing |
@@ -185,7 +187,7 @@ Cannoli watches the world (and your library) in three ways:
 | Layer | What it does | Output | Cost / week |
 |---|---|---|---|
 | **Anchors** (watched sources) | Diffs the sources you've curated in `sources.json` | `findings_YYYY-MM-DD.md` | ~$0.04 |
-| **Discovery** (scouting) | Pulls trending repos from GitHub topics (`claude`, `ai-agents`, `anthropic`) and top HackerNews stories. Surfaces each as a *candidate source* you can add to your watched list. | `candidates_YYYY-MM-DD.md` | ~$0.10 |
+| **Discovery** (scouting) | Pulls trending repos from GitHub topics (`claude`, `ai-agents`, `anthropic`), top HackerNews stories matching `claude anthropic` / `ai code review` / `ai dev tools`, and the latest arxiv papers matching `abs:prompt+engineering+AND+abs:agent` etc. Each becomes a *candidate*. | `candidates_YYYY-MM-DD.md` | ~$0.13 |
 | **Library** (local docs / PDFs / books) | Reads files you've dropped into `~/.tiramisu/library/` or `<repo>/.tiramisu/library/`. Native PDF support via Anthropic's document blocks. Hash-cached so only **changed files** are re-processed. | `findings_library_YYYY-MM-DD.md` | depends on what's added — ~$0.10–$0.50 per new book one-time |
 
 Both run automatically when you next launch `tiramisu` after >7 days — the dispatcher kicks off `t research all` as a detached background process. The pending notice combines both:
@@ -220,6 +222,28 @@ t research ingest "C:\path\to\effective-python.pdf"
 t research ingest "C:\path\to\design-docs-folder"
 t research library              # see what's in your library
 ```
+
+### arxiv papers — discover + grab
+
+The discovery layer also searches arxiv with these default queries (configurable via `~/.tiramisu/arxiv_queries.json`):
+
+```
+abs:prompt+engineering+AND+abs:agent
+abs:LLM+AND+abs:code+review
+abs:tool+use+AND+abs:language+model
+```
+
+Cannoli ranks each result 1–5 for relevance based on the abstract, never downloading the PDF during discovery (that would balloon costs). Each candidate carries an exact paste-able download command:
+
+```markdown
+### Some Paper Title
+**Relevance:** 4/5
+**arxiv ID:** 2401.12345
+**Why:** Argues for X-pattern in tool-use loops; would update agents/eclair.md.
+**Grab command:** `t research grab 2401.12345`
+```
+
+Run `t research grab 2401.12345` to pull just that one. Or `t research grab --all` to download every arxiv candidate from the latest candidates file in one shot. Papers land in `~/.tiramisu/library/arxiv/` and are auto-ingested (with chunked PDF splitting if needed) on the next `t research all` or weekly background run.
 
 ### Going from a candidate to a watched source
 
