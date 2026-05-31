@@ -317,6 +317,10 @@ tiramisu/
 
 ---
 
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, sell it, ignore it. No warranty.
+
 ## Design principles
 
 - **CLI-first** — every workflow is a `t <command>` or a `tiramisu` REPL turn. No required IDE plugin.
