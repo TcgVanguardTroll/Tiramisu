@@ -210,7 +210,7 @@ Supported file types: **.pdf** (sent as native document blocks to Claude — tex
 
 A hash cache (`~/.tiramisu/.research/library_hashes.json`) tracks each file's SHA-256. **Unchanged files are skipped** on subsequent runs — Cannoli only re-reads what's new or edited. Adding a 500-page PDF once costs ~$0.30 of Sonnet input; after that, it's free until you edit it.
 
-Cap per file: ~100 pages / 30 MB for PDFs (API limit). For larger books, split the PDF first.
+**No size cap.** PDFs over ~80 pages or ~25 MB are auto-split into chunks via `pypdf` and each chunk is ingested separately, with findings aggregated. A 500-page technical book becomes ~7 API calls, ~$1 one-time. The hash cache then prevents re-ingestion until you edit the file.
 
 Output goes to `findings_library_YYYY-MM-DD.md` with proposed steering edits (file path + section + exact text to paste). Same "propose, don't apply" rule as everything else.
 

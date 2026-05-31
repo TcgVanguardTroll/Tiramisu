@@ -683,7 +683,7 @@ USER_LIBRARY    = TIRAMISU_HOME / "library"
 LIBRARY_HASH_DB = RESEARCH_DIR / "library_hashes.json"
 INGESTIBLE_EXTS = {".pdf", ".md", ".markdown", ".txt", ".rst"}
 MAX_TEXT_CHARS  = 80000   # ~20k tokens, well under any model limit
-MAX_PDF_BYTES   = 30 * 1024 * 1024
+# PDF size / page limits for auto-splitting live further down by _ingest_pdf().
 
 
 def repo_library_path(cwd: Path | None = None) -> Path:
@@ -746,19 +746,83 @@ Rules:
 """
 
 
-def _ingest_pdf(path: Path) -> str:
-    """Send the PDF directly to Anthropic. Uses Claude's native PDF support."""
-    size = path.stat().st_size
-    if size > MAX_PDF_BYTES:
-        return (f"### {path.name}\n"
-                f"**Relevance:** n/a\n\n"
-                f"PDF is {size / 1024 / 1024:.1f} MB, exceeds {MAX_PDF_BYTES // 1024 // 1024} MB limit. "
-                f"Split it into smaller files and retry.\n")
+PDF_SPLIT_PAGE_TARGET = 80        # API limit is ~100 pages; 80 leaves headroom
+PDF_SPLIT_SIZE_TARGET = 25 * 1024 * 1024   # 30 MB API limit; 25 MB headroom
 
-    pdf_b64 = base64.standard_b64encode(path.read_bytes()).decode("ascii")
 
-    # Direct API call -- invoke() doesn't handle multi-block content yet
+def _pdf_page_count(path: Path) -> int | None:
+    """Return total pages via pypdf. None if pypdf missing or PDF unreadable."""
+    try:
+        from pypdf import PdfReader
+        return len(PdfReader(str(path)).pages)
+    except ImportError:
+        return None
+    except Exception as e:
+        print(f"[cannoli] could not read page count for {path.name}: {e}",
+              file=sys.stderr)
+        return None
+
+
+def _split_pdf(path: Path, max_pages: int = PDF_SPLIT_PAGE_TARGET) -> list[Path]:
+    """
+    Split a PDF into chunks of <= max_pages pages each. Writes chunks to a
+    temp subdir under RESEARCH_DIR and returns the chunk paths.
+
+    If pypdf isn't installed, returns []. Caller should handle that case.
+    If the PDF is already small enough, returns [path] (no split needed).
+    """
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError:
+        return []
+
+    try:
+        reader = PdfReader(str(path))
+    except Exception as e:
+        print(f"[cannoli] could not open {path.name} for splitting: {e}",
+              file=sys.stderr)
+        return []
+
+    total = len(reader.pages)
+    if total <= max_pages and path.stat().st_size <= PDF_SPLIT_SIZE_TARGET:
+        return [path]
+
+    split_dir = RESEARCH_DIR / "_split_tmp"
+    split_dir.mkdir(parents=True, exist_ok=True)
+
+    chunk_count = (total + max_pages - 1) // max_pages
+    chunks: list[Path] = []
+    for i in range(chunk_count):
+        start = i * max_pages
+        end   = min(start + max_pages, total)
+
+        writer = PdfWriter()
+        for page_idx in range(start, end):
+            writer.add_page(reader.pages[page_idx])
+
+        chunk_name = f"{path.stem}__part{i+1}of{chunk_count}.pdf"
+        chunk_path = split_dir / chunk_name
+        try:
+            with chunk_path.open("wb") as f:
+                writer.write(f)
+            chunks.append(chunk_path)
+        except Exception as e:
+            print(f"[cannoli] failed to write chunk {chunk_name}: {e}",
+                  file=sys.stderr)
+
+    return chunks
+
+
+def _ingest_pdf_chunk(chunk_path: Path, display_name: str,
+                      chunk_label: str = "") -> str:
+    """Send one PDF chunk to Anthropic as a document block. Returns section text."""
+    pdf_b64 = base64.standard_b64encode(chunk_path.read_bytes()).decode("ascii")
+
     from llm import _client, DEFAULT_MODEL, _log_api_usage
+    chunk_note = (f"\n\n(This is {chunk_label} of a larger document. "
+                  f"Cite chapter/section, not absolute page numbers from "
+                  f"the full book.)") if chunk_label else ""
+
     try:
         client = _client()
         resp = client.messages.create(
@@ -777,7 +841,9 @@ def _ingest_pdf(path: Path) -> str:
                     },
                     {
                         "type": "text",
-                        "text": INGEST_PROMPT.format(name=path.name, kind="PDF"),
+                        "text": INGEST_PROMPT.format(
+                            name=display_name, kind="PDF"
+                        ) + chunk_note,
                     },
                 ],
             }],
@@ -785,9 +851,71 @@ def _ingest_pdf(path: Path) -> str:
         _log_api_usage(resp.usage, DEFAULT_MODEL)
         return resp.content[0].text.strip()
     except Exception as e:
+        return (f"### {display_name}\n"
+                f"**Relevance:** n/a\n\n"
+                f"Ingestion failed: {type(e).__name__}: {e}\n")
+
+
+def _ingest_pdf(path: Path) -> str:
+    """
+    Ingest a PDF, auto-splitting if it exceeds the API's per-request limits
+    (~100 pages / 30 MB). Splitting requires pypdf; if pypdf isn't installed
+    and the PDF is too big, we return a helpful message instead of trying.
+    """
+    size  = path.stat().st_size
+    pages = _pdf_page_count(path)
+
+    needs_split = (
+        size > PDF_SPLIT_SIZE_TARGET
+        or (pages is not None and pages > PDF_SPLIT_PAGE_TARGET)
+    )
+
+    if not needs_split:
+        return _ingest_pdf_chunk(path, path.name)
+
+    # Try to split
+    chunks = _split_pdf(path)
+    if not chunks:
+        # pypdf missing
         return (f"### {path.name}\n"
                 f"**Relevance:** n/a\n\n"
-                f"PDF ingestion failed: {type(e).__name__}: {e}\n")
+                f"PDF is {size / 1024 / 1024:.1f} MB"
+                + (f", {pages} pages" if pages else "")
+                + " -- too large for one API call, and pypdf isn't available "
+                "to auto-split. Install with `pip install pypdf` or split "
+                "the file manually and retry.\n")
+
+    if len(chunks) == 1:
+        # _split_pdf decided no split was actually needed
+        return _ingest_pdf_chunk(chunks[0], path.name)
+
+    print(f"  ↳ splitting {path.name} into {len(chunks)} chunks "
+          f"(~{PDF_SPLIT_PAGE_TARGET} pages each)", flush=True)
+
+    sections: list[str] = []
+    for i, chunk in enumerate(chunks):
+        label = f"part {i+1}/{len(chunks)}"
+        print(f"     ingesting {label}", flush=True)
+        sections.append(_ingest_pdf_chunk(chunk, f"{path.name} ({label})", label))
+        try:
+            chunk.unlink()
+        except Exception:
+            pass
+
+    # Try to clean up the split dir if empty
+    try:
+        split_dir = chunks[0].parent
+        if not any(split_dir.iterdir()):
+            split_dir.rmdir()
+    except Exception:
+        pass
+
+    # Aggregate: each chunk produced one or more ### sections.
+    combined = "\n\n---\n\n".join(sections)
+    header = (f"### {path.name}\n"
+              f"_Auto-split into {len(chunks)} chunks of ~{PDF_SPLIT_PAGE_TARGET} pages each. "
+              f"Findings below are aggregated across all chunks._\n\n")
+    return header + combined
 
 
 def _ingest_text_file(path: Path) -> str:
