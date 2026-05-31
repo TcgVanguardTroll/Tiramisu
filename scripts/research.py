@@ -21,6 +21,8 @@ CLI:
   t research list     list all findings files chronologically
 """
 import argparse
+import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -662,6 +664,311 @@ def discover(quiet: bool = False) -> Path | None:
     return out_path
 
 
+# -------- library ingestion (local PDFs / docs / books) --------
+#
+# Drop files into ~/.tiramisu/library/ (user-wide) or <repo>/.tiramisu/library/
+# (project-specific) and Cannoli will read them on the weekly background run,
+# skipping unchanged files via content-hash cache.
+#
+# Supported file types:
+#   .pdf  -- sent to Anthropic API as a document block (native PDF support)
+#   .md / .txt / .rst -- sent as text
+#
+# Limits:
+#   - PDFs over ~100 pages or 32MB will fail at the API boundary; split first.
+#   - Each file gets DEFAULT_MODEL (Sonnet) -- quality matters more than speed
+#     because we only re-process when content changes.
+
+USER_LIBRARY    = TIRAMISU_HOME / "library"
+LIBRARY_HASH_DB = RESEARCH_DIR / "library_hashes.json"
+INGESTIBLE_EXTS = {".pdf", ".md", ".markdown", ".txt", ".rst"}
+MAX_TEXT_CHARS  = 80000   # ~20k tokens, well under any model limit
+MAX_PDF_BYTES   = 30 * 1024 * 1024
+
+
+def repo_library_path(cwd: Path | None = None) -> Path:
+    return (cwd or Path.cwd()) / ".tiramisu" / "library"
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _load_hash_cache() -> dict[str, str]:
+    if not LIBRARY_HASH_DB.exists():
+        return {}
+    try:
+        return json.loads(LIBRARY_HASH_DB.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_hash_cache(cache: dict[str, str]) -> None:
+    LIBRARY_HASH_DB.parent.mkdir(parents=True, exist_ok=True)
+    LIBRARY_HASH_DB.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+
+
+INGEST_PROMPT = """\
+You are Cannoli, the Tiramisu researcher. You're skimming a document the user
+has added to their library. Your job is to extract SHORT, SPECIFIC, ACTIONABLE
+insights that would improve Tiramisu's steering docs.
+
+Tiramisu's steering docs:
+  - engineering-principles.md  (universal design rules)
+  - code-style.md              (per-language style)
+  - communication-style.md     (commit / review tone)
+  - agents/<name>.md           (per-agent persona, voice, role)
+
+Document name: {name}
+Document type: {kind}
+
+For each insight worth proposing, output:
+
+### <one-line insight title>
+**Relevance:** <1-5, where 5 = ship today, 1 = ignore>
+**Cite:** <chapter / section / page if you can identify it>
+**Idea:** <2-3 sentence summary of what the document argues>
+**Proposed update:** <exact file + section + new text in a fenced block>
+
+Rules:
+- Only propose updates that meaningfully improve Tiramisu. Aim for 1-4
+  high-quality insights, not a wall of mediocre ones.
+- If nothing is worth proposing, output just: "No actionable insights from
+  this document." and stop. That's a respectable answer.
+- Cite the source -- chapter, section, or page number. Don't make claims
+  without grounding.
+- Never propose changes that would conflict with the "learn before mutate"
+  rule in CLAUDE.md §4.3.
+"""
+
+
+def _ingest_pdf(path: Path) -> str:
+    """Send the PDF directly to Anthropic. Uses Claude's native PDF support."""
+    size = path.stat().st_size
+    if size > MAX_PDF_BYTES:
+        return (f"### {path.name}\n"
+                f"**Relevance:** n/a\n\n"
+                f"PDF is {size / 1024 / 1024:.1f} MB, exceeds {MAX_PDF_BYTES // 1024 // 1024} MB limit. "
+                f"Split it into smaller files and retry.\n")
+
+    pdf_b64 = base64.standard_b64encode(path.read_bytes()).decode("ascii")
+
+    # Direct API call -- invoke() doesn't handle multi-block content yet
+    from llm import _client, DEFAULT_MODEL, _log_api_usage
+    try:
+        client = _client()
+        resp = client.messages.create(
+            model=DEFAULT_MODEL,
+            max_tokens=1200,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": pdf_b64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": INGEST_PROMPT.format(name=path.name, kind="PDF"),
+                    },
+                ],
+            }],
+        )
+        _log_api_usage(resp.usage, DEFAULT_MODEL)
+        return resp.content[0].text.strip()
+    except Exception as e:
+        return (f"### {path.name}\n"
+                f"**Relevance:** n/a\n\n"
+                f"PDF ingestion failed: {type(e).__name__}: {e}\n")
+
+
+def _ingest_text_file(path: Path) -> str:
+    """Read a text-based file (.md, .txt, .rst) and summarize via Sonnet."""
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        return f"### {path.name}\n**Relevance:** n/a\n\nCould not read: {e}\n"
+
+    if not text.strip():
+        return ""  # empty file -- skip silently
+
+    if len(text) > MAX_TEXT_CHARS:
+        text = text[:MAX_TEXT_CHARS] + f"\n\n[truncated -- {len(text)} chars total]"
+
+    try:
+        return invoke(
+            prompt=INGEST_PROMPT.format(name=path.name, kind=path.suffix[1:].upper())
+                   + "\n\n---\n\n" + text,
+            model=DEFAULT_MODEL,
+            max_tokens=1200,
+            temperature=0.2,
+        ).strip()
+    except Exception as e:
+        return f"### {path.name}\n**Relevance:** n/a\n\nText ingestion failed: {e}\n"
+
+
+def _ingest_file(path: Path) -> str | None:
+    """Dispatch on extension. Returns the section text, or None if skipped."""
+    ext = path.suffix.lower()
+    if ext == ".pdf":
+        return _ingest_pdf(path)
+    if ext in {".md", ".markdown", ".txt", ".rst"}:
+        return _ingest_text_file(path)
+    return None
+
+
+def _enumerate_library_files() -> list[Path]:
+    """All ingestible files from both library locations (user + per-repo)."""
+    files: list[Path] = []
+    for root in (USER_LIBRARY, repo_library_path()):
+        if not root.exists():
+            continue
+        for f in root.rglob("*"):
+            if f.is_file() and f.suffix.lower() in INGESTIBLE_EXTS:
+                files.append(f)
+    return files
+
+
+def ingest_library(quiet: bool = False, force: bool = False) -> Path | None:
+    """
+    Walk the user + per-repo library dirs, ingest any file whose hash has
+    changed since the last run (or all of them if force=True). Writes a
+    findings file with proposed steering updates.
+    """
+    RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
+
+    def log(msg: str) -> None:
+        if not quiet:
+            print(msg, flush=True)
+
+    files = _enumerate_library_files()
+    if not files:
+        log("\n🐶 Cannoli: library is empty (no PDFs / .md / .txt / .rst found).")
+        log(f"   Drop files into {USER_LIBRARY} to start.\n")
+        return None
+
+    cache    = _load_hash_cache() if not force else {}
+    sections = []
+    changed  = 0
+
+    log(f"\n🐶 Cannoli is reading the library ({len(files)} file(s))...\n")
+
+    for f in files:
+        key = str(f.resolve())
+        current = _file_sha256(f)
+        if cache.get(key) == current:
+            log(f"  ↳ unchanged: {f.name}")
+            continue
+        log(f"  ↳ ingesting: {f.name}  ({f.stat().st_size / 1024:.0f} KB)")
+        section = _ingest_file(f)
+        if section:
+            sections.append(f"## {f.name}\n_Source: {f.parent}_\n\n{section}")
+            cache[key] = current
+            changed += 1
+
+    _save_hash_cache(cache)
+
+    if changed == 0:
+        log("\n  No new or changed files -- nothing to ingest.\n")
+        return None
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    out_path = RESEARCH_DIR / f"findings_library_{today}.md"
+    body = (
+        f"# Cannoli library findings -- {today}\n\n"
+        f"Proposed updates from {changed} file(s) in your library. "
+        f"**Nothing is auto-applied.** Copy what's worth keeping into the "
+        f"steering files by hand.\n\n"
+        + "\n\n".join(sections)
+        + "\n"
+    )
+    out_path.write_text(body, encoding="utf-8")
+    log(f"\n✓ Library findings written to: {out_path}\n")
+    return out_path
+
+
+def ingest_path_cli(path_str: str, quiet: bool = False) -> None:
+    """Manual one-shot: ingest a specific file or directory NOW.
+    Does not use the hash cache -- always processes the target."""
+    target = Path(path_str).expanduser().resolve()
+    if not target.exists():
+        print(f"[cannoli] not found: {target}")
+        sys.exit(1)
+
+    if target.is_file():
+        if target.suffix.lower() not in INGESTIBLE_EXTS:
+            print(f"[cannoli] unsupported file type: {target.suffix}")
+            print(f"  Supported: {', '.join(sorted(INGESTIBLE_EXTS))}")
+            sys.exit(1)
+        files = [target]
+    else:
+        files = [
+            f for f in target.rglob("*")
+            if f.is_file() and f.suffix.lower() in INGESTIBLE_EXTS
+        ]
+
+    if not files:
+        print(f"[cannoli] no ingestible files under: {target}")
+        return
+
+    RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
+    sections = []
+    print(f"\n🐶 Cannoli is ingesting {len(files)} file(s) from {target}...\n")
+    for f in files:
+        print(f"  ↳ {f.name}  ({f.stat().st_size / 1024:.0f} KB)")
+        section = _ingest_file(f)
+        if section:
+            sections.append(f"## {f.name}\n_Source: {f.parent}_\n\n{section}")
+
+    if not sections:
+        print("\n  No content extracted.\n")
+        return
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    out_path = RESEARCH_DIR / f"findings_library_{today}.md"
+    body = (
+        f"# Cannoli library findings -- {today}  (manual ingest)\n\n"
+        + "\n\n".join(sections) + "\n"
+    )
+    # Append if file already exists from a scheduled run today
+    if out_path.exists():
+        out_path.write_text(out_path.read_text(encoding="utf-8") + "\n\n" + body,
+                            encoding="utf-8")
+    else:
+        out_path.write_text(body, encoding="utf-8")
+    print(f"\n✓ Written: {out_path}\n")
+
+
+def library_list() -> None:
+    """Show what's in the library, with hash-cache status."""
+    cache = _load_hash_cache()
+    files = _enumerate_library_files()
+    if not files:
+        print(f"\nLibrary is empty.")
+        print(f"  User dir: {USER_LIBRARY}")
+        repo = repo_library_path()
+        print(f"  Repo dir: {repo}  ({'exists' if repo.exists() else 'not created'})")
+        print(f"\n  Drop .pdf / .md / .txt / .rst files into either to have "
+              f"Cannoli read them weekly.\n")
+        return
+    print(f"\nLibrary ({len(files)} file(s)):\n")
+    for f in files:
+        key = str(f.resolve())
+        ingested = "ingested" if cache.get(key) == _file_sha256(f) else "PENDING"
+        size_kb  = f.stat().st_size / 1024
+        loc      = "user" if f.is_relative_to(USER_LIBRARY) else "repo"
+        print(f"  [{ingested:8}]  ({loc})  {f.name}  ({size_kb:.0f} KB)")
+    print()
+
+
 # -------- sources management --------
 
 def _write_user_sources(sources: list[dict]) -> None:
@@ -811,9 +1118,17 @@ def main():
         run_research(quiet=args.quiet)
     elif args.action == "discover":
         discover(quiet=args.quiet)
+    elif args.action == "ingest":
+        if not args.rest:
+            print("Usage: t research ingest <file-or-directory>")
+            sys.exit(1)
+        ingest_path_cli(args.rest[0], quiet=args.quiet)
+    elif args.action == "library":
+        library_list()
     elif args.action == "all":
         run_research(quiet=args.quiet)
         discover(quiet=args.quiet)
+        ingest_library(quiet=args.quiet)
     elif args.action == "mute":
         mute_all_pending()
     elif args.action == "list":
@@ -822,7 +1137,8 @@ def main():
         _sources_subcmd(args.rest)
     else:
         print(f"Unknown action: {args.action!r}")
-        print("Valid: show | run | discover | all | mute | list | sources [...]")
+        print("Valid: show | run | discover | ingest <path> | library | "
+              "all | mute | list | sources [...]")
         sys.exit(1)
 
 

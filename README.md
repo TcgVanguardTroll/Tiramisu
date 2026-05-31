@@ -138,7 +138,9 @@ Run `t research` to view the findings (rendered as Markdown), which marks them a
 | `t research` (no args) | Show + mark-read the newest unread file (findings or candidates) |
 | `t research run` | Scan watched sources now for new deltas |
 | `t research discover` | Scout GitHub Trending + HackerNews for new candidate sources |
-| `t research all` | Run + discover in one shot |
+| `t research ingest <path>` | Manually ingest a PDF / `.md` / `.txt` / `.rst` file or directory |
+| `t research library` | List files in your library + ingestion status |
+| `t research all` | Run + discover + ingest-library in one shot |
 | `t research mute` | Mark everything pending as read without showing |
 | `t research list` | Chronological history of findings + candidates |
 | `t research sources list` | Show active sources for this directory |
@@ -176,14 +178,15 @@ Example user file:
 
 You can add per-project sources too — e.g., put a `sources.json` in a project's `.tiramisu/` directory pointing at that project's docs, and Cannoli will watch those whenever you run `tiramisu` from inside that repo.
 
-### Two layers — anchors + discovery
+### Three layers — anchors + discovery + library
 
-Cannoli watches the world in two ways:
+Cannoli watches the world (and your library) in three ways:
 
 | Layer | What it does | Output | Cost / week |
 |---|---|---|---|
 | **Anchors** (watched sources) | Diffs the sources you've curated in `sources.json` | `findings_YYYY-MM-DD.md` | ~$0.04 |
-| **Discovery** (scouting) | Pulls trending repos from GitHub topics (`claude`, `ai-agents`, `anthropic`) and top HackerNews stories matching `claude anthropic` / `ai code review` / `ai dev tools`. Summarizes each as a *candidate source* you can add to your watched list. | `candidates_YYYY-MM-DD.md` | ~$0.10 |
+| **Discovery** (scouting) | Pulls trending repos from GitHub topics (`claude`, `ai-agents`, `anthropic`) and top HackerNews stories. Surfaces each as a *candidate source* you can add to your watched list. | `candidates_YYYY-MM-DD.md` | ~$0.10 |
+| **Library** (local docs / PDFs / books) | Reads files you've dropped into `~/.tiramisu/library/` or `<repo>/.tiramisu/library/`. Native PDF support via Anthropic's document blocks. Hash-cached so only **changed files** are re-processed. | `findings_library_YYYY-MM-DD.md` | depends on what's added — ~$0.10–$0.50 per new book one-time |
 
 Both run automatically when you next launch `tiramisu` after >7 days — the dispatcher kicks off `t research all` as a detached background process. The pending notice combines both:
 
@@ -193,6 +196,32 @@ Both run automatically when you next launch `tiramisu` after >7 days — the dis
 ```
 
 Discovery uses **only free public APIs** (GitHub Search API + HN Algolia API). No API keys, no rate-limit headaches at this scale. Total weekly cost: **~$0.14**.
+
+### Library: PDFs / books / docs you drop in
+
+Two directories Cannoli reads automatically on the weekly background run:
+
+```
+~/.tiramisu/library/           ← books, papers, internal docs you want every agent to learn from
+<repo>/.tiramisu/library/      ← project-specific docs only this repo should consider
+```
+
+Supported file types: **.pdf** (sent as native document blocks to Claude — text, tables, figures all readable), **.md / .markdown / .txt / .rst** (read as text).
+
+A hash cache (`~/.tiramisu/.research/library_hashes.json`) tracks each file's SHA-256. **Unchanged files are skipped** on subsequent runs — Cannoli only re-reads what's new or edited. Adding a 500-page PDF once costs ~$0.30 of Sonnet input; after that, it's free until you edit it.
+
+Cap per file: ~100 pages / 30 MB for PDFs (API limit). For larger books, split the PDF first.
+
+Output goes to `findings_library_YYYY-MM-DD.md` with proposed steering edits (file path + section + exact text to paste). Same "propose, don't apply" rule as everything else.
+
+Manual one-shot:
+```powershell
+t research ingest "C:\path\to\effective-python.pdf"
+t research ingest "C:\path\to\design-docs-folder"
+t research library              # see what's in your library
+```
+
+### Going from a candidate to a watched source
 
 When a candidate looks promising, copy the `Add command` from the candidates file:
 
