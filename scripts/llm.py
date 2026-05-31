@@ -148,19 +148,52 @@ def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
     return "".join(full)
 
 
+_MD_INDICATORS = ("```", "## ", "### ", "**", "\n- ", "\n* ", "\n1. ", "\n2. ")
+
+
+def _worth_rendering(text: str) -> bool:
+    """Print a rendered markdown view only when it genuinely adds something:
+    response is non-trivial AND has at least one markdown feature."""
+    if len(text) < 250:
+        return False
+    return any(ind in text for ind in _MD_INDICATORS)
+
+
+def _print_rendered_view(text: str) -> None:
+    """After streaming, print a single clean Markdown render below a divider.
+    No live re-render -- one-shot console.print(Markdown(...)) avoids the
+    overflow / append problem that broke rich.Live + Markdown on long output.
+    Set TIRAMISU_NO_RENDER=1 to suppress (e.g., in CI or piped output)."""
+    if os.environ.get("TIRAMISU_NO_RENDER"):
+        return
+    if not _worth_rendering(text):
+        return
+
+    try:
+        from rich.console import Console
+        from rich.markdown import Markdown
+        console = Console()
+        console.rule("[dim]rendered[/dim]")
+        console.print(Markdown(text))
+        console.rule()
+    except Exception:
+        # Never let pretty-printing break a successful API call
+        pass
+
+
 def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
     """
-    Streaming response intended to be rendered as Markdown.
+    Two-phase response:
+      Phase 1 -- plain streaming so the user sees text arriving live.
+      Phase 2 -- after the stream finishes, print ONE rendered Markdown view
+                 below a divider (only if the content has real markdown
+                 structure and is long enough to benefit).
 
-    Originally used rich.Live + rich.Markdown for live re-rendering, but that
-    pattern fundamentally breaks when the response exceeds terminal height:
-    each redraw cannot reach the top of the prior render, so chunks appear to
-    duplicate as content grows. Reverted to plain streaming -- markdown
-    structure (## headings, fenced ```code``` blocks, bullets, etc.) is still
-    visible in the raw output, just not visually formatted.
+    This sidesteps the rich.Live + Markdown overflow bug (the cursor can't
+    redraw past terminal height, so each chunk appears to duplicate). Doing
+    the render exactly once, after streaming is done, has no such problem.
 
-    Function name and signature preserved so callers can opt back in later if
-    we ship a better renderer.
+    Returns the raw text for callers that need to parse the response.
     """
     client = _client()
     kwargs = dict(
@@ -173,6 +206,7 @@ def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=
             {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
         ]
 
+    # Phase 1: plain streaming
     full = []
     with client.messages.stream(**kwargs) as stream:
         for text in stream.text_stream:
@@ -180,5 +214,11 @@ def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=
             full.append(text)
         final = stream.get_final_message()
     print()
+
+    text = "".join(full)
+
+    # Phase 2: one-shot rendered view, only if it helps
+    _print_rendered_view(text)
+
     _log_api_usage(final.usage, model)
-    return "".join(full)
+    return text
