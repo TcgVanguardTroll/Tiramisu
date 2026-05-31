@@ -12,6 +12,8 @@ The point: each agent gets a 5x stronger system prompt assembled from the
 high-quality steering docs the user already wrote, rather than a generic
 persona alone.
 """
+import sys
+from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,7 +31,7 @@ EXT_TO_LANG = {
 }
 
 
-def detect_languages(files):
+def detect_languages(files: list[str] | None) -> list[str]:
     """From a list of file paths, return sorted list of language section names."""
     langs = set()
     for f in files or []:
@@ -39,7 +41,7 @@ def detect_languages(files):
     return sorted(langs)
 
 
-def _parse_h2_sections(text):
+def _parse_h2_sections(text: str) -> dict[str, str]:
     """
     Parse a markdown file by `## ` headings. Returns {heading_name: section_text}.
     The section_text includes the heading line.
@@ -70,14 +72,16 @@ def _parse_h2_sections(text):
     return sections
 
 
-def _read(path):
+@lru_cache(maxsize=16)
+def _read(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
-    except Exception:
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"[tiramisu] steering: could not read {path}: {e}", file=sys.stderr)
         return ""
 
 
-def _code_style_for(languages, include_universal=True):
+def _code_style_for(languages: list[str] | None, include_universal: bool = True) -> str:
     """Extract the relevant language sections from code-style.md."""
     if not languages and not include_universal:
         return ""
@@ -99,7 +103,7 @@ def _code_style_for(languages, include_universal=True):
     return "\n\n".join(chunks)
 
 
-def _load_preferences():
+def _load_preferences() -> str:
     """Pull active preferences from learnings.db. Fail-soft."""
     try:
         import memory
@@ -108,11 +112,12 @@ def _load_preferences():
             return ""
         lines = [f"- [{p['category'] or 'general'}] {p['text']}" for p in prefs]
         return "\n".join(lines)
-    except Exception:
+    except Exception as e:
+        print(f"[tiramisu] steering: could not load preferences: {e}", file=sys.stderr)
         return ""
 
 
-def _find_repo_root(start: Path) -> Path:
+def _find_repo_root(start: Path | str) -> Path:
     """Walk up from `start` looking for a .git directory or .tiramisu directory.
     Returns the directory containing whichever we hit first, or `start` itself
     if neither is found within 10 levels."""
@@ -126,7 +131,7 @@ def _find_repo_root(start: Path) -> Path:
     return start.resolve()
 
 
-def _load_repo_overrides(cwd: Path) -> str:
+def _load_repo_overrides(cwd: Path | str) -> str:
     """
     Look for a .tiramisu/ directory in the current repo and load its files
     as the LAST steering layer (highest priority).
@@ -166,15 +171,15 @@ def _load_repo_overrides(cwd: Path) -> str:
 
 
 def load_steering(
-    agent,
-    languages=None,
-    include_engineering=True,
-    include_communication=False,
-    include_universal_style=True,
-    include_preferences=True,
-    include_repo_overrides=True,
-    cwd=None,
-):
+    agent: str,
+    languages: list[str] | None = None,
+    include_engineering: bool = True,
+    include_communication: bool = False,
+    include_universal_style: bool = True,
+    include_preferences: bool = True,
+    include_repo_overrides: bool = True,
+    cwd: str | Path | None = None,
+) -> str:
     """
     Build a composed system prompt for an agent.
 

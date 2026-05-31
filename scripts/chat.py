@@ -115,11 +115,24 @@ def _is_skipped(path: Path) -> bool:
     return any(part in SKIP_DIRS for part in path.parts)
 
 
+def _validate_path(p: Path) -> str | None:
+    """Return an error string if path escapes cwd, or None if safe."""
+    try:
+        resolved = p.resolve()
+    except (OSError, ValueError) as e:
+        return f"Error: invalid path: {e}"
+    if not resolved.is_relative_to(Path.cwd().resolve()):
+        return f"Error: path {p} is outside the working directory."
+    return None
+
+
 def execute_tool(name, tool_input) -> str:
     """Execute a read-only tool. Returns string result for the model."""
     try:
         if name == "read_file":
             p = Path(tool_input["path"])
+            if err := _validate_path(p):
+                return err
             if not p.exists():
                 return f"Error: file not found: {p}"
             if not p.is_file():
@@ -131,6 +144,8 @@ def execute_tool(name, tool_input) -> str:
 
         elif name == "list_files":
             p = Path(tool_input.get("path") or ".")
+            if err := _validate_path(p):
+                return err
             if not p.exists():
                 return f"Error: path not found: {p}"
             recursive = tool_input.get("recursive", False)
@@ -166,6 +181,8 @@ def execute_tool(name, tool_input) -> str:
             except re.error as e:
                 return f"Error: invalid regex: {e}"
             search_root = Path(tool_input.get("path") or ".")
+            if err := _validate_path(search_root):
+                return err
             glob_filter = tool_input.get("glob")
             results = []
             iterator = search_root.rglob(glob_filter) if glob_filter else search_root.rglob("*")

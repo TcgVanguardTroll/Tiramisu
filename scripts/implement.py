@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -40,9 +41,11 @@ from steering import load_steering
 import memory
 
 
+MAX_FILE_CHARS    = 30_000
 MAX_GREP_RESULTS  = 100
 MAX_LIST_RESULTS  = 200
-MAX_SHELL_OUTPUT  = 5000
+MAX_SHELL_OUTPUT  = 5_000
+SHELL_TIMEOUT_SEC = 180
 SKIP_DIRS = {
     ".git", "node_modules", "__pycache__", ".venv", "venv",
     "dist", "build", "target", ".idea", ".next", "coverage",
@@ -184,20 +187,35 @@ def _is_skipped(path: Path) -> bool:
     return any(part in SKIP_DIRS for part in path.parts)
 
 
+def _validate_path(p: Path) -> str | None:
+    """Return an error string if path escapes cwd, or None if safe."""
+    try:
+        resolved = p.resolve()
+    except (OSError, ValueError) as e:
+        return f"Error: invalid path: {e}"
+    if not resolved.is_relative_to(Path.cwd().resolve()):
+        return f"Error: path {p} is outside the working directory."
+    return None
+
+
 def execute_tool(name, tool_input, state: AgentState):
     """Execute a tool call. Returns string result for the model."""
     try:
         if name == "read_file":
             p = Path(tool_input["path"])
+            if err := _validate_path(p):
+                return err
             if not p.exists():
                 return f"Error: file not found: {p}"
             text = p.read_text(encoding="utf-8", errors="replace")
-            if len(text) > 30000:
-                return text[:30000] + f"\n... [truncated -- file is {len(text)} chars total]"
+            if len(text) > MAX_FILE_CHARS:
+                return text[:MAX_FILE_CHARS] + f"\n... [truncated -- file is {len(text)} chars total]"
             return text
 
         elif name == "write_file":
             p = Path(tool_input["path"])
+            if err := _validate_path(p if p.exists() else p.parent if p.parent.exists() else p):
+                return err
             content = tool_input["content"]
             is_new = not p.exists()
             label = "create" if is_new else "overwrite"
@@ -220,6 +238,8 @@ def execute_tool(name, tool_input, state: AgentState):
 
         elif name == "edit_file":
             p = Path(tool_input["path"])
+            if err := _validate_path(p):
+                return err
             old = tool_input["old_string"]
             new = tool_input["new_string"]
             if not p.exists():
@@ -254,6 +274,8 @@ def execute_tool(name, tool_input, state: AgentState):
 
         elif name == "list_files":
             p = Path(tool_input.get("path") or ".")
+            if err := _validate_path(p):
+                return err
             recursive = tool_input.get("recursive", False)
             if not p.exists():
                 return f"Error: path not found: {p}"
@@ -287,6 +309,8 @@ def execute_tool(name, tool_input, state: AgentState):
         elif name == "grep":
             pattern = tool_input["pattern"]
             search_root = Path(tool_input.get("path") or ".")
+            if err := _validate_path(search_root):
+                return err
             glob_filter = tool_input.get("glob")
             try:
                 regex = re.compile(pattern)
@@ -321,11 +345,17 @@ def execute_tool(name, tool_input, state: AgentState):
                 if not state.confirm("run?", default_yes=False):
                     return "User declined to run the command."
             try:
+                argv = shlex.split(cmd)
+            except ValueError as e:
+                return f"Error: could not parse command: {e}"
+            try:
                 result = subprocess.run(
-                    cmd, shell=True, capture_output=True, text=True, timeout=180
+                    argv, capture_output=True, text=True, timeout=SHELL_TIMEOUT_SEC
                 )
             except subprocess.TimeoutExpired:
-                return "Error: command timed out after 180s."
+                return f"Error: command timed out after {SHELL_TIMEOUT_SEC}s."
+            except FileNotFoundError:
+                return f"Error: command not found: {argv[0]}"
             out = (result.stdout or "") + (result.stderr or "")
             if len(out) > MAX_SHELL_OUTPUT:
                 out = out[:MAX_SHELL_OUTPUT] + f"\n... [truncated -- {len(out)} chars total]"

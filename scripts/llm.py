@@ -51,7 +51,6 @@ def _calc_cost(model, in_tok, out_tok, cache_write_tok=0, cache_read_tok=0):
 def _log_api_usage(usage, model):
     """Fire-and-forget usage capture. Never raises."""
     try:
-        # Anthropic SDK Usage object has these attributes; defaults to 0 if missing.
         in_tok          = getattr(usage, "input_tokens", 0) or 0
         out_tok         = getattr(usage, "output_tokens", 0) or 0
         cache_write_tok = getattr(usage, "cache_creation_input_tokens", 0) or 0
@@ -60,13 +59,15 @@ def _log_api_usage(usage, model):
         cost = _calc_cost(model, in_tok, out_tok, cache_write_tok, cache_read_tok)
         script = _caller_script()
 
-        # Late import so llm.py stays usable even if memory.py is broken
         from memory import log_token_usage
         log_token_usage(script, model, in_tok, out_tok,
                         cache_write_tok, cache_read_tok, cost)
-    except Exception:
-        # Logging is best-effort; never break the actual LLM call
-        pass
+    except Exception as e:
+        print(f"[tiramisu] usage log warning: {type(e).__name__}: {e}", file=sys.stderr)
+
+
+_ALLOWED_ENV_KEYS = {"ANTHROPIC_API_KEY", "TIRAMISU_HOME", "TIRAMISU_RENDER",
+                     "TIRAMISU_SPINNER", "TIRAMISU_NO_RENDER"}
 
 
 def _load_env():
@@ -84,7 +85,12 @@ def _load_env():
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        os.environ[k.strip()] = v.strip()
+        k = k.strip()
+        if k in _ALLOWED_ENV_KEYS or k.startswith("TIRAMISU_"):
+            os.environ[k] = v.strip()
+
+
+API_TIMEOUT_SEC = 120
 
 
 def _client():
@@ -95,7 +101,7 @@ def _client():
         raise RuntimeError(
             "ANTHROPIC_API_KEY not set. Add it to ~/.tiramisu/.env"
         )
-    return anthropic.Anthropic(api_key=key)
+    return anthropic.Anthropic(api_key=key, timeout=API_TIMEOUT_SEC)
 
 
 def invoke(

@@ -27,8 +27,8 @@ from steering import load_steering, detect_languages
 from gitutil import run_git
 import memory
 
-MAX_DIFF_CHARS     = 6000
-MAX_PER_FILE_CHARS = 4000
+MAX_DIFF_CHARS     = 6_000
+MAX_PER_FILE_CHARS = 4_000
 MAX_FILES          = 6
 
 

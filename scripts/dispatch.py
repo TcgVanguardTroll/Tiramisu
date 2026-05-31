@@ -141,7 +141,7 @@ def run_subcommand(cmd: str, user_input: str) -> int:
     else:
         args = [str(t_dispatcher), cmd]
 
-    result = subprocess.run(args, shell=(os.name == "nt"))
+    result = subprocess.run(args)
     return result.returncode
 
 

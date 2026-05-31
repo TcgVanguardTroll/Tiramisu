@@ -119,6 +119,17 @@ def main():
     if msg.startswith("```"):
         msg = "\n".join(msg.splitlines()[1:-1] if msg.endswith("```") else msg.splitlines()[1:])
 
+    # Validate: non-empty, first line under 72 chars, not absurdly long
+    if not msg.strip():
+        print("[eclair] empty draft; leaving commit message for you to write.", flush=True)
+        sys.exit(0)
+    lines = msg.splitlines()
+    if len(lines[0]) > 72:
+        lines[0] = lines[0][:72]
+        msg = "\n".join(lines)
+    if len(msg) > 2000:
+        msg = msg[:2000]
+
     commit_msg_file.write_text(msg + "\n", encoding="utf-8")
     memory.log_commit_draft(repo_path, files, msg)
 
