@@ -1347,6 +1347,198 @@ def ingest_path_cli(path_str: str, quiet: bool = False) -> None:
     print(f"\n✓ Written: {out_path}\n")
 
 
+SCOUT_PROMPT = """\
+You are Cannoli scouting a library of technical books for relevance to
+Tiramisu, a CLI for AI-assisted dev workflows. Tiramisu cares about:
+code review, prompt engineering, agent design, Python idioms, software
+architecture, distributed systems, testing.
+
+Below is a numbered list of books (filename only, plus the parent folder
+category). For each, rate it 1-5:
+  5 = definitely worth ingesting; concrete patterns we'd adopt
+  4 = highly relevant; specific techniques apply
+  3 = somewhat relevant; might surface a useful idea
+  2 = tangential; would skip
+  1 = irrelevant; not about what Tiramisu cares about
+
+Output one line per book, EXACTLY in this format:
+  N: relevance=K <brief reason, max 10 words>
+
+Where N is the input number. Examples:
+  3: relevance=5 canonical software design book; ingest now
+  7: relevance=2 dated Java 1.4 enterprise patterns
+  12: relevance=1 graphics programming, off-topic
+
+BOOKS:
+{batch}
+
+Output (one line per book, in input order):"""
+
+
+def scout_library(path: Path, batch_size: int = 50,
+                  max_results: int = 30, quiet: bool = False) -> Path | None:
+    """
+    Scan a directory tree for PDFs and rank each by filename relevance to
+    Tiramisu. CHEAP -- only filenames sent to Haiku, no PDF reads. Cost
+    scales linearly with batches: ~$0.01 per 50 books.
+
+    Writes a scout_YYYY-MM-DD.md file with top-N candidates ranked, each
+    with a paste-able `t research ingest "<path>"` command.
+    """
+    import re as _re
+
+    if not path.exists():
+        print(f"[scout] path not found: {path}")
+        return None
+    if not path.is_dir():
+        print(f"[scout] not a directory: {path}")
+        return None
+
+    def log(msg: str) -> None:
+        if not quiet:
+            print(msg, flush=True)
+
+    log(f"\n🐶 Cannoli is scouting: {path}\n")
+    log("  Enumerating PDFs (no API calls yet)...")
+
+    pdfs: list[dict] = []
+    for f in path.rglob("*.pdf"):
+        try:
+            size = f.stat().st_size
+        except Exception:
+            continue
+        try:
+            rel = f.relative_to(path)
+            category = rel.parts[0] if len(rel.parts) > 1 else "uncategorized"
+        except Exception:
+            category = "uncategorized"
+        pdfs.append({
+            "name":     f.name,
+            "path":     str(f),
+            "category": category,
+            "size_mb":  size / 1024 / 1024,
+        })
+
+    if not pdfs:
+        log(f"  No PDFs found.")
+        return None
+
+    log(f"  Found {len(pdfs)} PDF(s). Scoring in batches of {batch_size}...")
+    n_batches = (len(pdfs) + batch_size - 1) // batch_size
+    log(f"  Estimated {n_batches} Haiku call(s), ~${n_batches * 0.007:.2f} total.\n")
+
+    scored: list[dict] = []
+    for i in range(0, len(pdfs), batch_size):
+        batch = pdfs[i:i + batch_size]
+        batch_no = i // batch_size + 1
+        log(f"  ↳ batch {batch_no}/{n_batches}  ({len(batch)} books)")
+
+        listing = "\n".join(
+            f"{j + 1}. [{p['category']}] {p['name']} ({p['size_mb']:.1f} MB)"
+            for j, p in enumerate(batch)
+        )
+
+        try:
+            response = invoke(
+                prompt=SCOUT_PROMPT.format(batch=listing),
+                model=FAST_MODEL,
+                max_tokens=1500,
+                temperature=0.1,
+            )
+        except Exception as e:
+            log(f"     [warn] batch failed: {e}")
+            continue
+
+        # Parse lines: "N: relevance=K reason"
+        pattern = _re.compile(r"^\s*(\d+)\s*:\s*relevance\s*=\s*([1-5])\s*(.*)$",
+                              _re.IGNORECASE)
+        seen_idx = set()
+        for line in response.splitlines():
+            m = pattern.match(line)
+            if not m:
+                continue
+            idx = int(m.group(1)) - 1
+            if idx in seen_idx or idx < 0 or idx >= len(batch):
+                continue
+            seen_idx.add(idx)
+            scored.append({
+                **batch[idx],
+                "score":  int(m.group(2)),
+                "reason": m.group(3).strip(),
+            })
+
+    if not scored:
+        log("\n  No books were scored. Check that FAST_MODEL is reachable.")
+        return None
+
+    # Rank: highest score first; ties broken by smaller size (cheaper to ingest)
+    scored.sort(key=lambda p: (-p["score"], p["size_mb"]))
+    top = scored[:max_results]
+
+    # Aggregate stats by score for the summary
+    by_score: dict[int, int] = {}
+    for p in scored:
+        by_score[p["score"]] = by_score.get(p["score"], 0) + 1
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    out_path = RESEARCH_DIR / f"scout_{today}.md"
+    RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        f"# Library scout -- {today}",
+        f"",
+        f"**Scanned:** `{path}`",
+        f"**Total PDFs:** {len(pdfs)}",
+        f"**Scored:** {len(scored)} (in {n_batches} Haiku batch{'es' if n_batches != 1 else ''})",
+        f"**Score distribution:** "
+        + ", ".join(f"{s}/5 → {by_score.get(s, 0)}" for s in (5, 4, 3, 2, 1)),
+        f"",
+        f"Top {len(top)} candidates ranked below. Pick what's worth ingesting "
+        f"and paste the `Ingest command` for each. Books rated 4-5 are usually "
+        f"worth your attention; below 3 is probably noise.",
+        f"",
+        f"---",
+        f"",
+    ]
+    for p in top:
+        lines.append(f"## {p['name']}")
+        lines.append(f"**Relevance:** {p['score']}/5  &nbsp; **Category:** {p['category']}"
+                     f"  &nbsp; **Size:** {p['size_mb']:.1f} MB")
+        if p.get("reason"):
+            lines.append(f"**Why:** {p['reason']}")
+        lines.append("")
+        lines.append(f"**Ingest command:** `t research ingest \"{p['path']}\"`")
+        lines.append("")
+
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+
+    log(f"\n✓ Scout report written to: {out_path}")
+    log(f"  Score breakdown: " +
+        ", ".join(f"{s}/5={by_score.get(s, 0)}" for s in (5, 4, 3, 2, 1)))
+    log(f"\n  Open the file or run `t research show-scout` to see the top "
+        f"{max_results} ranked candidates.\n")
+
+    return out_path
+
+
+def show_latest_scout() -> None:
+    """Render the newest scout_*.md via rich Markdown."""
+    files = sorted(
+        RESEARCH_DIR.glob("scout_*.md") if RESEARCH_DIR.exists() else [],
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )
+    if not files:
+        print("\nNo scout report yet. Run `t research scout <path>` first.\n")
+        return
+    text = files[0].read_text(encoding="utf-8")
+    try:
+        from rich.console import Console
+        from rich.markdown import Markdown
+        Console().print(Markdown(text))
+    except Exception:
+        print(text)
+
+
 def library_list() -> None:
     """Show what's in the library, with hash-cache status."""
     cache = _load_hash_cache()
@@ -1537,6 +1729,15 @@ def main():
             grab_paper(target)
     elif args.action == "library":
         library_list()
+    elif args.action == "scout":
+        if not args.rest:
+            print("Usage: t research scout <path-to-library>")
+            print("  Scans the directory for PDFs, ranks each by relevance.")
+            print("  Cheap (filename-only scoring). ~$0.01 per 50 books.")
+            sys.exit(1)
+        scout_library(Path(args.rest[0]).expanduser(), quiet=args.quiet)
+    elif args.action in ("show-scout", "scout-show"):
+        show_latest_scout()
     elif args.action == "all":
         run_research(quiet=args.quiet)
         discover(quiet=args.quiet)
@@ -1550,7 +1751,8 @@ def main():
     else:
         print(f"Unknown action: {args.action!r}")
         print("Valid: show | run | discover | grab <id|--all> | "
-              "ingest <path> | library | all | mute | list | sources [...]")
+              "ingest <path> | scout <path> | show-scout | library | "
+              "all | mute | list | sources [...]")
         sys.exit(1)
 
 

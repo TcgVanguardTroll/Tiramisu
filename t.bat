@@ -95,6 +95,8 @@ REM  t research discover                 -- scout GitHub Trending + HN for new c
 REM  t research ingest <path>            -- ingest a PDF / .md / .txt / .rst file or dir
 REM  t research grab <arxiv-id>          -- download an arxiv paper into the library
 REM  t research grab --all               -- download every arxiv candidate from latest scan
+REM  t research scout <path>             -- rank books in a directory by filename relevance (cheap)
+REM  t research show-scout               -- re-display the latest scout report
 REM  t research library                  -- list files in your library
 REM  t research all                      -- run + discover + ingest-library in one shot
 REM  t research mute                     -- mark all pending as read
