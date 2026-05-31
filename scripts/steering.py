@@ -112,6 +112,59 @@ def _load_preferences():
         return ""
 
 
+def _find_repo_root(start: Path) -> Path:
+    """Walk up from `start` looking for a .git directory or .tiramisu directory.
+    Returns the directory containing whichever we hit first, or `start` itself
+    if neither is found within 10 levels."""
+    cur = start.resolve()
+    for _ in range(10):
+        if (cur / ".tiramisu").is_dir() or (cur / ".git").is_dir():
+            return cur
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return start.resolve()
+
+
+def _load_repo_overrides(cwd: Path) -> str:
+    """
+    Look for a .tiramisu/ directory in the current repo and load its files
+    as the LAST steering layer (highest priority).
+
+    Recognized files inside <repo>/.tiramisu/:
+      - style.md          general style rules specific to this project
+      - preferences.md    project-specific preferences
+      - context.md        free-form project context (architecture, glossary, etc.)
+      - any other .md     loaded with its filename as the heading
+
+    Empty / missing dir returns "".
+    """
+    repo = _find_repo_root(cwd)
+    override_dir = repo / ".tiramisu"
+    if not override_dir.is_dir():
+        return ""
+
+    # Stable order so the prompt cache stays hot across calls
+    md_files = sorted(override_dir.glob("*.md"))
+    if not md_files:
+        return ""
+
+    chunks = []
+    for f in md_files:
+        text = _read(f)
+        if not text.strip():
+            continue
+        # Strip a leading H1 from the file (we add our own heading)
+        body = text.strip()
+        heading = f.stem.replace("_", " ").replace("-", " ").title()
+        chunks.append(f"## {heading}  ({f.name})\n\n{body}")
+
+    if not chunks:
+        return ""
+
+    return f"# PROJECT-SPECIFIC OVERRIDES (from {override_dir})\n\n" + "\n\n".join(chunks)
+
+
 def load_steering(
     agent,
     languages=None,
@@ -119,6 +172,8 @@ def load_steering(
     include_communication=False,
     include_universal_style=True,
     include_preferences=True,
+    include_repo_overrides=True,
+    cwd=None,
 ):
     """
     Build a composed system prompt for an agent.
@@ -131,6 +186,8 @@ def load_steering(
       include_communication: include communication-style.md
       include_universal_style: include the "Universal Preferences" section of code-style.md
       include_preferences: append learned preferences from learnings.db
+      include_repo_overrides: append per-repo .tiramisu/*.md files (highest priority)
+      cwd: directory to search for .tiramisu/ overrides (defaults to process cwd)
 
     Returns:
       A single string ready to be passed as `system=` to the LLM.
@@ -160,12 +217,21 @@ def load_steering(
         if comm:
             parts.append("\n# COMMUNICATION STYLE\n\n" + comm.strip())
 
-    # 5. Active preferences
+    # 5. Active preferences (from learnings.db)
     if include_preferences:
         prefs = _load_preferences()
         if prefs:
             parts.append(
                 "\n# USER PREFERENCES (learned over time -- respect these)\n\n" + prefs
             )
+
+    # 6. Per-repo overrides (highest priority -- last in the prompt so they
+    #    override anything that came before)
+    if include_repo_overrides:
+        from pathlib import Path as _Path
+        override_cwd = _Path(cwd) if cwd else _Path.cwd()
+        overrides = _load_repo_overrides(override_cwd)
+        if overrides:
+            parts.append("\n" + overrides)
 
     return "\n\n".join(parts)

@@ -68,6 +68,20 @@ CREATE TABLE IF NOT EXISTS preferences (
     active INTEGER DEFAULT 1
 );
 
+CREATE TABLE IF NOT EXISTS token_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT DEFAULT CURRENT_TIMESTAMP,
+    script TEXT,
+    model TEXT,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cache_create_tokens INTEGER DEFAULT 0,
+    cache_read_tokens INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_token_usage_ts ON token_usage(ts);
+CREATE INDEX IF NOT EXISTS idx_token_usage_script ON token_usage(script);
+
 CREATE TABLE IF NOT EXISTS overrides (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -181,6 +195,23 @@ def update_commit_final(repo_path, final):
     conn.commit()
     conn.close()
     return rid
+
+
+@_safe
+def log_token_usage(script, model, input_tokens, output_tokens,
+                    cache_create_tokens=0, cache_read_tokens=0, cost_usd=0.0):
+    """Fire-and-forget log of one API call's token usage."""
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO token_usage "
+        "(script, model, input_tokens, output_tokens, cache_create_tokens, "
+        " cache_read_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (script, model, int(input_tokens or 0), int(output_tokens or 0),
+         int(cache_create_tokens or 0), int(cache_read_tokens or 0),
+         float(cost_usd or 0.0)),
+    )
+    conn.commit()
+    conn.close()
 
 
 @_safe
@@ -298,6 +329,25 @@ def stats_since(days=30):
             (cutoff,),
         ).fetchall()
 
+        token_totals = conn.execute(
+            "SELECT COUNT(*), SUM(input_tokens), SUM(output_tokens), "
+            "SUM(cache_create_tokens), SUM(cache_read_tokens), SUM(cost_usd) "
+            "FROM token_usage WHERE ts > ?",
+            (cutoff,),
+        ).fetchone()
+
+        token_by_script = conn.execute(
+            "SELECT script, COUNT(*), SUM(input_tokens + output_tokens), SUM(cost_usd) "
+            "FROM token_usage WHERE ts > ? GROUP BY script ORDER BY SUM(cost_usd) DESC",
+            (cutoff,),
+        ).fetchall()
+
+        token_by_model = conn.execute(
+            "SELECT model, COUNT(*), SUM(cost_usd) "
+            "FROM token_usage WHERE ts > ? GROUP BY model ORDER BY SUM(cost_usd) DESC",
+            (cutoff,),
+        ).fetchall()
+
         conn.close()
 
         return {
@@ -310,6 +360,20 @@ def stats_since(days=30):
             },
             "overrides": [r[0] for r in overrides],
             "recent_finals": [r[0] for r in recent_finals],
+            "tokens": {
+                "calls":              token_totals[0] or 0,
+                "input_tokens":       token_totals[1] or 0,
+                "output_tokens":      token_totals[2] or 0,
+                "cache_create":       token_totals[3] or 0,
+                "cache_read":         token_totals[4] or 0,
+                "cost_usd":           token_totals[5] or 0.0,
+                "by_script":          [{"script": r[0], "calls": r[1],
+                                        "tokens": r[2] or 0, "cost_usd": r[3] or 0.0}
+                                       for r in token_by_script],
+                "by_model":           [{"model": r[0], "calls": r[1],
+                                        "cost_usd": r[2] or 0.0}
+                                       for r in token_by_model],
+            },
         }
     except Exception as e:
         return {"error": str(e)}

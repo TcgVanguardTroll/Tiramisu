@@ -108,6 +108,52 @@ def format_preferences():
     return "\n".join(f"  [{p['category']}] {p['text']}" for p in prefs)
 
 
+def format_token_usage(stats):
+    t = stats.get("tokens", {})
+    calls = t.get("calls", 0)
+    if calls == 0:
+        return "  (no API calls logged yet)"
+
+    in_tok    = t.get("input_tokens", 0)
+    out_tok   = t.get("output_tokens", 0)
+    cache_cr  = t.get("cache_create", 0)
+    cache_rd  = t.get("cache_read", 0)
+    cost      = t.get("cost_usd", 0.0)
+
+    lines = [
+        f"  Total cost: ${cost:.4f}",
+        f"  API calls:  {calls}",
+        f"  Tokens:     {in_tok:>10,} in   |  {out_tok:>10,} out",
+    ]
+    if cache_cr or cache_rd:
+        savings_pct = (cache_rd / max(in_tok + cache_rd, 1)) * 100
+        lines.append(
+            f"  Cache:      {cache_cr:>10,} write |  {cache_rd:>10,} read  "
+            f"(hit rate ~{savings_pct:.0f}% of input tokens)"
+        )
+
+    by_script = t.get("by_script", [])
+    if by_script:
+        lines.append("")
+        lines.append("  By script:")
+        for s in by_script[:8]:
+            lines.append(
+                f"    {s['script']:20}  {s['calls']:>4} calls  "
+                f"{s['tokens']:>10,} tok  ${s['cost_usd']:.4f}"
+            )
+
+    by_model = t.get("by_model", [])
+    if by_model:
+        lines.append("")
+        lines.append("  By model:")
+        for m in by_model:
+            lines.append(
+                f"    {m['model']:25}  {m['calls']:>4} calls  ${m['cost_usd']:.4f}"
+            )
+
+    return "\n".join(lines)
+
+
 def main():
     days = 30
     if len(sys.argv) > 1:
@@ -138,6 +184,9 @@ def main():
 
     print("\n## Active preferences")
     print(format_preferences())
+
+    print("\n## Token & cost usage")
+    print(format_token_usage(stats))
 
     # If data is genuinely sparse, skip the LLM call
     total_signals = (

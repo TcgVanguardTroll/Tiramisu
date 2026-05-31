@@ -1,4 +1,5 @@
 """Shared LLM utility for Tiramisu scripts. Uses the Anthropic API directly."""
+import inspect
 import os
 import sys
 from pathlib import Path
@@ -11,6 +12,61 @@ _ENV_FILE = Path(os.environ.get("TIRAMISU_HOME", Path.home() / ".tiramisu")) / "
 # commit-message drafts, pre-commit reviews, single-shot preference classification.
 DEFAULT_MODEL  = "claude-sonnet-4-5"
 FAST_MODEL     = "claude-haiku-4-5"
+
+# Anthropic pricing per 1M tokens (USD), as of 2026.
+# cache_write = 1.25x base input rate, cache_read = 0.10x base input rate.
+# Unknown models fall back to DEFAULT_MODEL rates -- cost is approximate, not billed.
+_COSTS = {
+    "claude-sonnet-4-5": {"input": 3.00, "output": 15.00, "cache_write": 3.75,  "cache_read": 0.30},
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00, "cache_write": 3.75,  "cache_read": 0.30},
+    "claude-opus-4-7":   {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
+    "claude-haiku-4-5":  {"input": 0.80, "output": 4.00,  "cache_write": 1.00,  "cache_read": 0.08},
+    "claude-haiku-3-5":  {"input": 0.80, "output": 4.00,  "cache_write": 1.00,  "cache_read": 0.08},
+}
+
+
+def _caller_script():
+    """Identify which Tiramisu script called the LLM (for the usage log)."""
+    for frame in inspect.stack():
+        fname = Path(frame.filename).resolve()
+        # Skip frames inside this file -- find the actual caller
+        if fname.name == "llm.py":
+            continue
+        # Anything inside our scripts/ or hooks/ counts
+        return fname.stem
+    return "unknown"
+
+
+def _calc_cost(model, in_tok, out_tok, cache_write_tok=0, cache_read_tok=0):
+    """Best-effort cost estimate. Falls back to Sonnet rates if model is unknown."""
+    rates = _COSTS.get(model) or _COSTS[DEFAULT_MODEL]
+    return (
+        in_tok          * rates["input"]
+        + out_tok       * rates["output"]
+        + cache_write_tok * rates["cache_write"]
+        + cache_read_tok  * rates["cache_read"]
+    ) / 1_000_000
+
+
+def _log_api_usage(usage, model):
+    """Fire-and-forget usage capture. Never raises."""
+    try:
+        # Anthropic SDK Usage object has these attributes; defaults to 0 if missing.
+        in_tok          = getattr(usage, "input_tokens", 0) or 0
+        out_tok         = getattr(usage, "output_tokens", 0) or 0
+        cache_write_tok = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        cache_read_tok  = getattr(usage, "cache_read_input_tokens", 0) or 0
+
+        cost = _calc_cost(model, in_tok, out_tok, cache_write_tok, cache_read_tok)
+        script = _caller_script()
+
+        # Late import so llm.py stays usable even if memory.py is broken
+        from memory import log_token_usage
+        log_token_usage(script, model, in_tok, out_tok,
+                        cache_write_tok, cache_read_tok, cost)
+    except Exception:
+        # Logging is best-effort; never break the actual LLM call
+        pass
 
 
 def _load_env():
@@ -65,6 +121,7 @@ def invoke(
             {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
         ]
     resp = client.messages.create(**kwargs)
+    _log_api_usage(resp.usage, model)
     return resp.content[0].text
 
 
@@ -85,5 +142,7 @@ def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
         for text in stream.text_stream:
             print(text, end="", flush=True)
             full.append(text)
+        final = stream.get_final_message()
     print()
+    _log_api_usage(final.usage, model)
     return "".join(full)

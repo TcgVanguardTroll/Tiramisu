@@ -115,15 +115,37 @@ This data feeds back into every agent's system prompt automatically. After a few
 
 ## Steering composition
 
-When an agent runs, its system prompt is composed from:
+When an agent runs, its system prompt is composed from these layers in order. Later layers override earlier ones:
 
 1. `agents/<name>.md` — persona
 2. `engineering-principles.md` — universal design rules
 3. `code-style.md` — **only the language sections relevant to the files in scope** (auto-detected from file extensions)
 4. Active preferences from `learnings.db`
 5. (Cookie-only) recent override snippets so she stays calibrated
+6. **Per-repo overrides** from `<repo>/.tiramisu/*.md` — project-specific rules (see below)
 
 Cookie reviewing a `.py` change sees Python conventions. Cookie reviewing `.java` sees Java conventions. Same agent, different context.
+
+### Per-repo overrides
+
+Drop any `.md` files into a `.tiramisu/` directory at the root of any repo and they get loaded as the **highest-priority** steering layer for that project:
+
+```
+my-project/
+├── .tiramisu/
+│   ├── style.md          # project-specific style rules
+│   ├── context.md        # architecture overview, glossary
+│   └── preferences.md    # things specific to this codebase
+├── .git/
+└── src/
+```
+
+Examples of what to put there:
+- "Money values use `Decimal`, never `float`."
+- "All async functions take a `trace_id: str` as the first arg."
+- "Skip docstring lints in `legacy/` — that code is deprecated."
+
+The agents will know these rules apply only in that project. Add Tiramisu's `.tiramisu/.repl_history` and similar to your `.gitignore` if you don't want them committed (only `.md` files in `.tiramisu/` are loaded as steering).
 
 ---
 
