@@ -17,20 +17,16 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from gitutil import run_git
 import memory
 
 
 def main():
-    # Narrow except: FileNotFoundError if git isn't installed, OSError for other
-    # spawn failures. We deliberately do NOT catch KeyboardInterrupt or generic
-    # Exception -- if the unexpected happens, surfacing the error is correct
-    # behavior for a learning-loop hook that is otherwise silent.
+    # gitutil.run_git() handles git-not-found by raising RuntimeError with a
+    # clear message; we still don't want to block the commit hook on it.
     try:
-        result = subprocess.run(
-            ["git", "log", "-1", "--pretty=%B"],
-            capture_output=True, text=True, check=False,
-        )
-    except (FileNotFoundError, OSError) as e:
+        result = run_git("log", "-1", "--pretty=%B", check=False)
+    except (RuntimeError, OSError) as e:
         print(f"[eclair] post-commit: could not invoke git ({e})", file=sys.stderr)
         sys.exit(0)
 

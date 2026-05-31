@@ -21,16 +21,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke, FAST_MODEL
+from gitutil import run_git
 import memory
 
 
 def get_recent_git_messages(n=5):
     """Fall back to git log if learnings.db is empty."""
     try:
-        result = subprocess.run(
-            ["git", "log", f"-{n}", "--pretty=%B%n---ENDMSG---"],
-            capture_output=True, text=True
-        )
+        result = run_git("log", f"-{n}", "--pretty=%B%n---ENDMSG---")
         chunks = [c.strip() for c in result.stdout.split("---ENDMSG---") if c.strip()]
         return chunks[:n]
     except Exception:
@@ -93,18 +91,14 @@ def main():
     if source in ("message", "merge", "squash", "commit"):
         sys.exit(0)
 
-    diff = subprocess.run(
-        ["git", "diff", "--cached"],
-        capture_output=True, text=True
-    ).stdout.strip()
+    diff = run_git("diff", "--cached").stdout.strip()
 
     if not diff:
         sys.exit(0)
 
     files = [
-        f.strip() for f in subprocess.run(
-            ["git", "diff", "--cached", "--name-only"],
-            capture_output=True, text=True
+        f.strip() for f in run_git(
+            "diff", "--cached", "--name-only"
         ).stdout.strip().splitlines() if f.strip()
     ]
 

@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from llm import invoke_stream_markdown, DEFAULT_MODEL
 from steering import load_steering, detect_languages
 from personas import pair as persona_pair
+from gitutil import git_exe, run_git
 
 MAX_DIFF_CHARS     = 12000
 MAX_PER_FILE_CHARS = 4000
@@ -46,15 +47,15 @@ def find_base_branch(specified):
     if specified:
         return specified
     for candidate in ("origin/main", "origin/master", "main", "master"):
-        if subprocess.run(
-            ["git", "rev-parse", "--verify", candidate],
-            capture_output=True
-        ).returncode == 0:
+        if run_git("rev-parse", "--verify", candidate).returncode == 0:
             return candidate
     return "main"
 
 
 def run(cmd):
+    # cmd is a list that starts with a literal "git" -- swap for the real exe
+    if cmd and cmd[0] == "git":
+        cmd = [git_exe(), *cmd[1:]]
     return subprocess.run(cmd, capture_output=True, text=True).stdout.strip()
 
 

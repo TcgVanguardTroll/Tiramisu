@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke_stream_markdown, FAST_MODEL
 from steering import load_steering, detect_languages
+from gitutil import run_git
 import memory
 
 MAX_DIFF_CHARS     = 6000
@@ -32,22 +33,13 @@ MAX_FILES          = 6
 
 
 def get_staged_diff():
-    stat = subprocess.run(
-        ["git", "diff", "--cached", "--stat"],
-        capture_output=True, text=True
-    ).stdout.strip()
-    diff = subprocess.run(
-        ["git", "diff", "--cached"],
-        capture_output=True, text=True
-    ).stdout.strip()
+    stat = run_git("diff", "--cached", "--stat").stdout.strip()
+    diff = run_git("diff", "--cached").stdout.strip()
     return stat, diff
 
 
 def get_changed_files():
-    result = subprocess.run(
-        ["git", "diff", "--cached", "--name-only"],
-        capture_output=True, text=True
-    )
+    result = run_git("diff", "--cached", "--name-only")
     return [f.strip() for f in result.stdout.strip().splitlines() if f.strip()]
 
 
@@ -108,9 +100,25 @@ def extract_blocker_snippet(review):
 
 
 def main():
+    # Confirm we're inside a git repo BEFORE doing anything else --
+    # gives a clean error instead of empty diff output when invoked
+    # in the wrong directory.
+    check = run_git("rev-parse", "--is-inside-work-tree", check=False)
+    if check.returncode != 0 or check.stdout.strip() != "true":
+        print(
+            "\n[cookie] not inside a git repository.\n"
+            f"         cwd: {Path.cwd()}\n"
+            "         Run this from inside a repo, or use `t scan` for an "
+            "ad-hoc review of any directory.\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     stat, diff = get_staged_diff()
 
     if not diff:
+        print("\n[cookie] no staged changes to review. "
+              "Stage some files with `git add` first.\n", file=sys.stderr)
         sys.exit(0)
 
     files = get_changed_files()
@@ -183,4 +191,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RuntimeError as e:
+        # git missing or similar -- surface cleanly instead of a stack trace
+        print(f"\n[cookie] {e}", file=sys.stderr)
+        sys.exit(1)
