@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke_stream, DEFAULT_MODEL
 from steering import load_steering, detect_languages
+from personas import pair as persona_pair
 
 MAX_DIFF_CHARS     = 12000
 MAX_PER_FILE_CHARS = 4000
@@ -148,7 +149,7 @@ def format_comment_body(c):
     severity = (c.get("severity") or "").upper()
     tag = SEVERITY_TAGS.get(severity, f"**{severity or 'note'}**")
     body = (c.get("body") or "").strip()
-    return f"{tag}\n\n{body}\n\n_— Cookie 🐈🍪 (Tiramisu AI reviewer)_"
+    return f"{tag}\n\n{body}\n\n_— Cookie {persona_pair('cookie')} (Tiramisu AI reviewer)_"
 
 
 def validate_comments(comments, changed_files):

@@ -6,18 +6,18 @@ A personal multi-agent dev system. A crew of pastry-named pets that scope your w
 
 Every agent is named after a pastry that matches their fur.
 
-Every agent has a unique pet+pastry pair — no duplicates. Source of truth: `scripts/personas.py`.
+All dogs share 🐶, all cats share 🐱. Each agent's pastry is unique — that's the visual differentiator. Source of truth: `scripts/personas.py`.
 
 | Agent | Sigil | Pet | Role |
 |-------|:-----:|-----|------|
 | **Tiramisu** | 🐶🍮 | Red tri mini American Shepherd | Orchestrator — herds the rest |
 | **Éclair** | 🦡🍫 | Sleek black ferret (mustelid kin: badger) | SDE — writes code with full codebase access |
-| **Cookie** | 🐈🍪 | Tortoiseshell cat | Reviewer — judgmental, zero tolerance for sloppiness |
-| **Croissant** | 🐕🥐 | Corgi | PM — scopes tasks, defines acceptance criteria |
+| **Cookie** | 🐱🍪 | Tortoiseshell cat | Reviewer — judgmental, zero tolerance for sloppiness |
+| **Croissant** | 🐶🥐 | Corgi | PM — scopes tasks, defines acceptance criteria |
 | **Madeleine** | 🐱🧁 | Ginger tabby | Knowledge keeper — surfaces patterns from accumulated data |
-| **Cannoli** | 🐕‍🦺🍩 | Beagle | Research (planned) |
+| **Cannoli** | 🐶🍩 | Beagle | Research (planned) |
 | **Mochi** | 🐰🍡 | White lop rabbit | Brainstorm (planned) |
-| **Brioche** | 🦮🍞 | Golden retriever | HR — onboards new agents (planned) |
+| **Brioche** | 🐶🍞 | Golden retriever | HR — onboards new agents (planned) |
 
 ---
 
@@ -49,7 +49,7 @@ $ tiramisu
 
 tiramisu » scope adding dark mode
   ->  t task
-  [🐕🥐  Croissant streams a scope plan]
+  [🐶🥐  Croissant streams a scope plan]
 
 tiramisu » implement the dark mode toggle
   ->  t implement
@@ -88,7 +88,7 @@ If you already know which agent you want, skip the router:
 After `t hook` in a repo, every `git commit` triggers:
 
 1. 🦡🍫 **Éclair drafts the commit message** from your staged diff, using your last 5 commits as few-shot examples so the voice matches yours.
-2. 🐈🍪 **Cookie reviews** the diff plus the full content of each changed file. She has your engineering principles, code style for the relevant languages, and your learned preferences in her system prompt. She halts on `[BLOCKER]` and prompts to override.
+2. 🐱🍪 **Cookie reviews** the diff plus the full content of each changed file. She has your engineering principles, code style for the relevant languages, and your learned preferences in her system prompt. She halts on `[BLOCKER]` and prompts to override.
 3. 📊 **Post-commit captures** the final message you actually shipped, so Éclair learns whether her drafts are landing as-is or getting heavily edited.
 
 Skip for one commit: `git commit --no-verify`.

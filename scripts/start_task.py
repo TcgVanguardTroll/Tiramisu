@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke_stream, DEFAULT_MODEL
 from steering import load_steering
+from personas import pair as persona_pair
 
 WORKSPACE = ROOT / "shared_workspace" / "tasks"
 
@@ -93,7 +94,7 @@ def main():
     )
 
     print("=" * 60)
-    print("🐕🥐  Croissant — Task Scope Session")
+    print(f"{persona_pair('croissant')}  Croissant — Task Scope Session")
     print("=" * 60)
     print()
 
@@ -113,7 +114,7 @@ def main():
         print("No task provided. Exiting.")
         sys.exit(0)
 
-    print("\n[croissant] 🐕🥐 Defining scope...\n")
+    print(f"\n[croissant] {persona_pair('croissant')} Defining scope...\n")
     print("-" * 60)
 
     plan = invoke_stream(
@@ -146,7 +147,7 @@ def main():
     if check == "y":
         scope_check(plan, system)
 
-    print("\n🐕🥐  Scope defined. Stick to it. Good luck.\n")
+    print(f"\n{persona_pair('croissant')}  Scope defined. Stick to it. Good luck.\n")
 
 
 if __name__ == "__main__":
