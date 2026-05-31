@@ -51,7 +51,7 @@ case "$cmd" in
         "$PYTHON" "$TIRAMISU_ROOT/scripts/reflect.py" "$@"
         ;;
     research)
-        # t research [show|run|mute|list]
+        # t research [show|run|mute|list|sources ...]
         "$PYTHON" "$TIRAMISU_ROOT/scripts/research.py" "$@"
         ;;
     help|--help|-h|"")

@@ -21,6 +21,7 @@ CLI:
   t research list     list all findings files chronologically
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -50,8 +51,10 @@ STALE_DAYS    = 7
 HTTP_TIMEOUT  = 20                          # seconds per source
 MAX_SRC_CHARS = 30000                       # truncate huge pages
 
-# Default sources. Add / remove freely -- this is a sensible starting point.
-SOURCES = [
+# Default sources -- shipped as a fallback so first-run always has something
+# to scan. Users can override via ~/.tiramisu/sources.json or extend per-repo
+# via <repo>/.tiramisu/sources.json. See load_sources() below.
+DEFAULT_SOURCES = [
     {
         "name":  "Anthropic API release notes",
         "url":   "https://docs.anthropic.com/en/release-notes/api",
@@ -77,6 +80,54 @@ SOURCES = [
                  "typing, async, error handling).",
     },
 ]
+
+
+def user_sources_path() -> Path:
+    return TIRAMISU_HOME / "sources.json"
+
+
+def repo_sources_path(cwd: Path | None = None) -> Path:
+    return (cwd or Path.cwd()) / ".tiramisu" / "sources.json"
+
+
+def _load_json_list(path: Path) -> list[dict] | None:
+    """Read a JSON list of source dicts from a file. Returns None on any error
+    (file missing, malformed JSON, wrong shape) so the caller can fall back."""
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[cannoli] couldn't parse {path}: {e}", file=sys.stderr)
+        return None
+    if not isinstance(data, list):
+        print(f"[cannoli] {path} must be a JSON list; ignoring.", file=sys.stderr)
+        return None
+    valid = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        if "name" not in item or "url" not in item:
+            continue
+        item.setdefault("focus", "general updates")
+        valid.append(item)
+    return valid
+
+
+def load_sources() -> list[dict]:
+    """
+    Return the active source list, layered:
+      1. If ~/.tiramisu/sources.json exists -> REPLACES defaults entirely.
+         Otherwise the hardcoded DEFAULT_SOURCES is the base.
+      2. Plus any sources in <cwd>/.tiramisu/sources.json -- additive.
+
+    Same precedence model as steering.py's load_steering().
+    """
+    base = _load_json_list(user_sources_path()) or list(DEFAULT_SOURCES)
+    repo_extra = _load_json_list(repo_sources_path())
+    if repo_extra:
+        base = base + repo_extra
+    return base
 
 
 # -------- helpers --------
@@ -269,11 +320,12 @@ def run_research(quiet: bool = False) -> Path:
         if not quiet:
             print(msg, flush=True)
 
-    log("\n🐶 Cannoli is scanning external sources...\n")
+    sources = load_sources()
+    log(f"\n🐶 Cannoli is scanning {len(sources)} external source(s)...\n")
 
     findings_sections: list[str] = []
 
-    for src in SOURCES:
+    for src in sources:
         name, url, focus = src["name"], src["url"], src["focus"]
         log(f"  ↳ fetching: {name}")
 
@@ -394,12 +446,145 @@ def list_all() -> None:
     print()
 
 
+# -------- sources management --------
+
+def _write_user_sources(sources: list[dict]) -> None:
+    """Save the user's sources.json. Creates parent dir if needed."""
+    path = user_sources_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(sources, indent=2), encoding="utf-8")
+
+
+def sources_list() -> None:
+    """Print the active sources for this run, with their origin."""
+    user_path = user_sources_path()
+    repo_path = repo_sources_path()
+
+    if user_path.exists():
+        origin = f"user file ({user_path})"
+    else:
+        origin = "hardcoded defaults (no user file yet)"
+
+    base_sources = _load_json_list(user_path) or list(DEFAULT_SOURCES)
+    repo_extra   = _load_json_list(repo_path) or []
+
+    print(f"\nActive sources ({len(base_sources) + len(repo_extra)} total)\n")
+
+    if base_sources:
+        print(f"From {origin}:")
+        for i, s in enumerate(base_sources, 1):
+            print(f"  {i}. {s['name']}")
+            print(f"     url:   {s['url']}")
+            focus = s.get("focus", "")
+            if focus:
+                wrapped = (focus[:140] + "...") if len(focus) > 140 else focus
+                print(f"     focus: {wrapped}")
+        print()
+
+    if repo_extra:
+        print(f"From repo file ({repo_path}):")
+        for i, s in enumerate(repo_extra, 1):
+            print(f"  +{i}. {s['name']}  ({s['url']})")
+        print()
+
+    if not user_path.exists():
+        print("To customize: `t research sources reset` writes the defaults to "
+              "your user file so you can edit them.\n")
+
+
+def sources_add(url: str, name: str | None, focus: str | None) -> None:
+    """Append a source to the user's sources.json. Creates from defaults if missing."""
+    if not url:
+        print("Usage: t research sources add <url> [name] [focus]")
+        sys.exit(1)
+
+    name = name or url
+    focus = focus or "general updates worth watching"
+
+    current = _load_json_list(user_sources_path()) or list(DEFAULT_SOURCES)
+
+    # Don't add duplicates by URL
+    if any(s["url"] == url for s in current):
+        print(f"  source with url={url!r} already present; not added.")
+        return
+
+    current.append({"name": name, "url": url, "focus": focus})
+    _write_user_sources(current)
+    print(f"\n  added: {name}")
+    print(f"          {url}")
+    print(f"  total: {len(current)} source(s) in {user_sources_path()}\n")
+
+
+def sources_remove(name_or_url: str) -> None:
+    """Remove a source by name or URL match."""
+    if not name_or_url:
+        print("Usage: t research sources remove <name-or-url>")
+        sys.exit(1)
+
+    current = _load_json_list(user_sources_path()) or list(DEFAULT_SOURCES)
+    needle = name_or_url.lower()
+
+    remaining = [
+        s for s in current
+        if needle not in s["name"].lower() and needle not in s["url"].lower()
+    ]
+
+    if len(remaining) == len(current):
+        print(f"  no source matched {name_or_url!r}; nothing removed.")
+        return
+
+    _write_user_sources(remaining)
+    print(f"\n  removed {len(current) - len(remaining)} source(s) "
+          f"matching {name_or_url!r}.")
+    print(f"  total now: {len(remaining)} source(s) in {user_sources_path()}\n")
+
+
+def sources_reset() -> None:
+    """Write DEFAULT_SOURCES to the user file so they can edit from a clean baseline."""
+    _write_user_sources(list(DEFAULT_SOURCES))
+    print(f"\n  wrote {len(DEFAULT_SOURCES)} default source(s) to "
+          f"{user_sources_path()}.")
+    print("  Edit that file freely; or run `t research sources add <url>` to extend.\n")
+
+
+def sources_show() -> None:
+    """Dump the raw user sources.json (for grep / copy)."""
+    path = user_sources_path()
+    if path.exists():
+        print(path.read_text(encoding="utf-8"))
+    else:
+        print("# No user sources.json yet -- using hardcoded defaults.")
+        print(json.dumps(DEFAULT_SOURCES, indent=2))
+
+
 # -------- CLI --------
+
+def _sources_subcmd(rest: list[str]) -> None:
+    """Dispatch `t research sources ...` subcommands."""
+    if not rest or rest[0] == "list":
+        sources_list()
+    elif rest[0] == "add":
+        url   = rest[1] if len(rest) > 1 else None
+        name  = rest[2] if len(rest) > 2 else None
+        focus = rest[3] if len(rest) > 3 else None
+        sources_add(url, name, focus)
+    elif rest[0] == "remove":
+        sources_remove(rest[1] if len(rest) > 1 else None)
+    elif rest[0] == "reset":
+        sources_reset()
+    elif rest[0] == "show":
+        sources_show()
+    else:
+        print(f"Unknown sources action: {rest[0]!r}")
+        print("Valid: list | add <url> [name] [focus] | remove <name-or-url> | reset | show")
+        sys.exit(1)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Cannoli -- autonomous research")
-    parser.add_argument("action", nargs="?", default="show",
-                        choices=["show", "run", "mute", "list"])
+    parser.add_argument("action", nargs="?", default="show")
+    parser.add_argument("rest", nargs=argparse.REMAINDER,
+                        help="Trailing args for subcommands (e.g. sources add <url>)")
     parser.add_argument("--quiet", action="store_true",
                         help="Suppress progress output (for background runs)")
     args = parser.parse_args()
@@ -412,6 +597,12 @@ def main():
         mute_all_pending()
     elif args.action == "list":
         list_all()
+    elif args.action == "sources":
+        _sources_subcmd(args.rest)
+    else:
+        print(f"Unknown action: {args.action!r}")
+        print("Valid: show | run | mute | list | sources [...]")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

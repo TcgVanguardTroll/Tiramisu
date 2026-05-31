@@ -139,6 +139,40 @@ Run `t research` to view the findings (rendered as Markdown), which marks them a
 | `t research run` | Force a fresh scan now in the foreground |
 | `t research mute` | Mark all pending findings as read without showing them |
 | `t research list` | List all historical findings files chronologically |
+| `t research sources list` | Show active sources for this directory |
+| `t research sources add <url> [name] [focus]` | Add a source to your user config |
+| `t research sources remove <name-or-url>` | Drop a source |
+| `t research sources reset` | Write defaults to `~/.tiramisu/sources.json` for you to edit |
+| `t research sources show` | Dump the raw JSON config |
+
+### Source configuration — three layers
+
+The active source list follows the same per-user / per-repo pattern as everything else:
+
+| Layer | File | Behavior |
+|---|---|---|
+| **Defaults** | hardcoded in `scripts/research.py` | Always available; used if no user file exists |
+| **User** | `~/.tiramisu/sources.json` | **Replaces** defaults if present |
+| **Per-repo** | `<repo>/.tiramisu/sources.json` | **Adds** to whichever base is active |
+
+Example user file:
+
+```json
+[
+  {
+    "name": "Anthropic API release notes",
+    "url": "https://docs.anthropic.com/en/release-notes/api",
+    "focus": "Models, pricing, new SDK features"
+  },
+  {
+    "name": "My team's design-doc repo",
+    "url": "https://raw.githubusercontent.com/my-org/design-docs/main/README.md",
+    "focus": "New patterns we should know about"
+  }
+]
+```
+
+You can add per-project sources too — e.g., put a `sources.json` in a project's `.tiramisu/` directory pointing at that project's docs, and Cannoli will watch those whenever you run `tiramisu` from inside that repo.
 
 Cost: roughly $0.01–$0.05 per weekly run (Haiku-summarized deltas only). Tracked in `t reflect` under "Token & cost usage" like everything else.
 

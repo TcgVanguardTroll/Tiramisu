@@ -89,11 +89,16 @@ REM  t reflect 7        -- last N days
 GOTO end
 
 :research
-REM  t research              -- show latest unread findings
-REM  t research run          -- force a research run now (foreground)
-REM  t research mute         -- mark pending findings as read without showing
-REM  t research list         -- list all historical findings files
-%PYTHON% "%TIRAMISU_ROOT%\scripts\research.py" %2
+REM  t research                          -- show latest unread findings
+REM  t research run                      -- force a research run now (foreground)
+REM  t research mute                     -- mark pending findings as read
+REM  t research list                     -- list historical findings files
+REM  t research sources list             -- show active sources
+REM  t research sources add <url> [name] [focus]   -- add a source
+REM  t research sources remove <name>    -- remove a source
+REM  t research sources reset            -- write defaults to user file
+REM  t research sources show             -- dump raw sources.json
+%PYTHON% "%TIRAMISU_ROOT%\scripts\research.py" %2 %3 %4 %5 %6 %7 %8 %9
 GOTO end
 
 :usage
