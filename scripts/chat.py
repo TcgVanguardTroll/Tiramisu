@@ -36,8 +36,6 @@ from personas import pair as persona_pair, pet as persona_pet
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.live import Live
-from rich.markdown import Markdown
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.formatted_text import FormattedText
@@ -254,25 +252,22 @@ def chat_turn(messages, system, client):
     """
     for depth in range(MAX_TOOL_DEPTH):
         try:
-            buffer = []
-            with Live("", console=console, refresh_per_second=8,
-                      vertical_overflow="visible", auto_refresh=False) as live:
-                with client.messages.stream(
-                    model=DEFAULT_MODEL,
-                    max_tokens=4096,
-                    system=system,
-                    tools=TOOLS,
-                    messages=messages,
-                ) as stream:
-                    for text in stream.text_stream:
-                        buffer.append(text)
-                        content = "".join(buffer).rstrip()
-                        if content:
-                            # Show the persona marker once content starts arriving
-                            live.update(Markdown(f"{persona_pet('tiramisu')}  {content}"),
-                                        refresh=True)
-                    final = stream.get_final_message()
-            # If no text was streamed (pure tool call), nothing to render
+            with client.messages.stream(
+                model=DEFAULT_MODEL,
+                max_tokens=4096,
+                system=system,
+                tools=TOOLS,
+                messages=messages,
+            ) as stream:
+                first_text = True
+                for text in stream.text_stream:
+                    if first_text:
+                        console.print(f"[bold magenta]{persona_pet('tiramisu')}  [/bold magenta]", end="")
+                        first_text = False
+                    console.print(text, end="")
+                if not first_text:
+                    console.print()  # newline after streamed text
+                final = stream.get_final_message()
         except KeyboardInterrupt:
             console.print("\n[yellow][interrupted][/yellow]")
             return

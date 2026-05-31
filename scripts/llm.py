@@ -150,18 +150,18 @@ def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
 
 def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
     """
-    Like invoke_stream, but renders the response as live Markdown using rich.
-    Headings get formatted, fenced code blocks get syntax highlighting.
-    Returns the raw text (not rendered) so calling code can still parse it.
+    Streaming response intended to be rendered as Markdown.
 
-    Use this for agent responses meant to be read (reviews, plans, reports).
-    Use plain invoke_stream for short / structured outputs where rendering
-    doesn't help.
+    Originally used rich.Live + rich.Markdown for live re-rendering, but that
+    pattern fundamentally breaks when the response exceeds terminal height:
+    each redraw cannot reach the top of the prior render, so chunks appear to
+    duplicate as content grows. Reverted to plain streaming -- markdown
+    structure (## headings, fenced ```code``` blocks, bullets, etc.) is still
+    visible in the raw output, just not visually formatted.
+
+    Function name and signature preserved so callers can opt back in later if
+    we ship a better renderer.
     """
-    from rich.console import Console
-    from rich.live import Live
-    from rich.markdown import Markdown
-
     client = _client()
     kwargs = dict(
         model=model,
@@ -173,20 +173,12 @@ def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=
             {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
         ]
 
-    console = Console()
-    buffer = []
-
-    # refresh_per_second=8 keeps the live re-renders smooth without flickering.
-    # vertical_overflow="visible" lets long responses scroll the terminal.
-    with Live("", console=console, refresh_per_second=8,
-              vertical_overflow="visible", auto_refresh=False) as live:
-        with client.messages.stream(**kwargs) as stream:
-            for text in stream.text_stream:
-                buffer.append(text)
-                content = "".join(buffer)
-                if content.strip():
-                    live.update(Markdown(content), refresh=True)
-            final = stream.get_final_message()
-
+    full = []
+    with client.messages.stream(**kwargs) as stream:
+        for text in stream.text_stream:
+            print(text, end="", flush=True)
+            full.append(text)
+        final = stream.get_final_message()
+    print()
     _log_api_usage(final.usage, model)
-    return "".join(buffer)
+    return "".join(full)
