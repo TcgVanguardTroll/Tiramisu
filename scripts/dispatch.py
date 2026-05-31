@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from llm import invoke, FAST_MODEL
 from personas import pair as persona_pair, pet as persona_pet, color as persona_color
+import spinners as _spinners   # registers tiramisu spinners with rich
 
 # Rich + prompt_toolkit are required at runtime. The dispatcher refuses to start
 # without them, so import failures are loud, not silent.
@@ -257,7 +258,7 @@ def repl():
             continue
 
         try:
-            with console.status("[dim]Tiramisu is routing…[/dim]", spinner="dots"):
+            with console.status("[dim]Tiramisu is routing…[/dim]", spinner=_spinners.chosen()):
                 cmd = route(user_input)
             console.print(f"  [dim]→[/dim] [bold cyan]t {cmd}[/bold cyan]\n")
             run_subcommand(cmd, user_input)

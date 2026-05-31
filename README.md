@@ -225,6 +225,26 @@ export TIRAMISU_RENDER=rendered
 
 `TIRAMISU_NO_RENDER=1` is kept as a deprecated alias for `stream`.
 
+### Spinner themes
+
+The "thinking…" indicator (visible during router decisions and in `rendered` mode) has a few animal-themed variants. Set via `TIRAMISU_SPINNER`:
+
+| Value | Looks like |
+|---|---|
+| `paws` *(default)* | 🐾 walking paw prints with a fading trail |
+| `chase` | 🐶 puppy running across the line |
+| `pastries` | 🍮 🥐 🍪 🧁 🍩 🍡 🍞 🍫 rotating |
+| `naptime` | 🐱 cat sleeping, zzz building |
+| `sniff` | 🐶 puppy sniffing left-to-right and back |
+| any rich built-in | `dots`, `dots2`, `line`, `arrow`, etc. — passes through |
+
+```powershell
+$env:TIRAMISU_SPINNER = "pastries"
+tiramisu look at my code
+```
+
+Set permanently the same way as `TIRAMISU_RENDER` above.
+
 ## Per-user data
 
 | Path | What lives there |

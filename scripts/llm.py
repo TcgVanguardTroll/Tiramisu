@@ -202,6 +202,7 @@ def _silent_then_render(client, kwargs, model) -> str:
     try:
         from rich.console import Console
         from rich.markdown import Markdown
+        import spinners as _spinners
     except Exception:
         # Fallback: lose the rendering, but never crash
         return _plain_stream(client, kwargs, model)
@@ -209,7 +210,7 @@ def _silent_then_render(client, kwargs, model) -> str:
     console = Console()
     buffer = []
 
-    with console.status("[dim]thinking...[/dim]", spinner="dots"):
+    with console.status("[dim]thinking...[/dim]", spinner=_spinners.chosen()):
         with client.messages.stream(**kwargs) as stream:
             for text in stream.text_stream:
                 buffer.append(text)
