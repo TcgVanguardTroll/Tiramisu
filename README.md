@@ -133,58 +133,41 @@ Cookie reviewing a `.py` change sees Python conventions. Cookie reviewing `.java
 - Git + [GitHub CLI](https://cli.github.com/) — the CLI is only required for `t pr --post`
 - An [Anthropic API key](https://console.anthropic.com/)
 
-### Install (Windows)
+### Install — 2 commands either platform
+
+#### Windows
 
 ```powershell
-# 1. Clone wherever you want it to live
 git clone https://github.com/TcgVanguardTroll/tiramisu.git C:\tiramisu
-
-# 2. Install Python dependencies
-C:\Python314\python.exe -m pip install -r C:\tiramisu\requirements.txt
-
-# 3. Add to user PATH
-$p = [System.Environment]::GetEnvironmentVariable("PATH", "User")
-[System.Environment]::SetEnvironmentVariable("PATH", "$p;C:\tiramisu", "User")
-
-# 4. Configure your API key
-New-Item -ItemType Directory -Force "$HOME\.tiramisu" | Out-Null
-"ANTHROPIC_API_KEY=sk-ant-your-key-here" | Out-File -Encoding utf8 "$HOME\.tiramisu\.env"
+C:\tiramisu\setup.ps1
 ```
 
-Open a fresh terminal, then verify:
-```powershell
-t help
-tiramisu
-```
-
-Windows uses `t.bat` / `tiramisu.bat`. PATHEXT picks them up automatically when you type `t` or `tiramisu`.
-
-### Install (macOS / Linux)
+#### macOS / Linux
 
 ```bash
-# 1. Clone wherever you want it to live
 git clone https://github.com/TcgVanguardTroll/tiramisu.git ~/.local/share/tiramisu
-
-# 2. Install Python deps
-pip3 install -r ~/.local/share/tiramisu/requirements.txt
-
-# 3. Add to PATH (adjust shell as needed)
-echo 'export PATH="$HOME/.local/share/tiramisu:$PATH"' >> ~/.bashrc   # or ~/.zshrc
-
-# 4. Configure your API key
-mkdir -p ~/.tiramisu
-echo "ANTHROPIC_API_KEY=sk-ant-your-key-here" > ~/.tiramisu/.env
+~/.local/share/tiramisu/setup.sh
 ```
 
-Open a fresh terminal, then verify:
-```bash
+The setup script:
+1. Finds Python 3.10+
+2. Installs all deps (`anthropic`, `rich`, `prompt_toolkit`)
+3. Adds the install dir to your user PATH
+4. Creates `~/.tiramisu/.env` with a key placeholder
+
+It's idempotent — safe to re-run after `git pull` to refresh dependencies.
+
+After the script finishes, you'll be told if you need to:
+- Open a fresh terminal (so PATH picks up)
+- Add your `ANTHROPIC_API_KEY` to `~/.tiramisu/.env`
+
+Then verify:
+```
 t help
 tiramisu
 ```
 
-POSIX uses the extension-less `t` and `tiramisu` shell scripts, which exec the same Python entry points the `.bat` files do.
-
-> **Cross-platform note**: line endings on the shell scripts are pinned to LF in `.gitattributes` (otherwise Windows checkouts of POSIX shims would break), and `.bat` files are pinned to CRLF (otherwise `cmd.exe` mis-parses them).
+> **Line-ending note**: `.gitattributes` pins `.bat` files to CRLF (otherwise `cmd.exe` mis-parses them) and the POSIX shims (`t`, `tiramisu`, `*.sh`) to LF (otherwise `/bin/sh` fails on `^M`). This is automatic on `git clone` — you don't need to think about it.
 
 ---
 
