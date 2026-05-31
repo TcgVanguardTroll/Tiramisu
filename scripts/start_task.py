@@ -117,7 +117,7 @@ def main():
     print(f"\n[croissant] {persona_pair('croissant')} Defining scope...\n")
     print("-" * 60)
 
-    plan = invoke_stream(
+    plan = invoke_stream_markdown(
         prompt=PROMPT_TEMPLATE.format(task=task),
         system=system,
         model=DEFAULT_MODEL,
