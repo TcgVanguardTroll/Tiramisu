@@ -50,6 +50,10 @@ case "$cmd" in
         # t reflect [days]
         "$PYTHON" "$TIRAMISU_ROOT/scripts/reflect.py" "$@"
         ;;
+    research)
+        # t research [show|run|mute|list]
+        "$PYTHON" "$TIRAMISU_ROOT/scripts/research.py" "$@"
+        ;;
     help|--help|-h|"")
         cat <<EOF
 
@@ -65,6 +69,7 @@ case "$cmd" in
   t chat [question]   Conversational mode -- read-only, remembers context
   t learn "text"      Teach the agents a preference
   t reflect [days]    Weekly self-improvement report
+  t research [action] Cannoli's external research; auto-runs weekly
   t help              This message
 
 EOF

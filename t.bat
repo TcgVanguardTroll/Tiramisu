@@ -26,6 +26,7 @@ IF /I "%1"=="implement" GOTO implement
 IF /I "%1"=="chat"      GOTO chat
 IF /I "%1"=="learn"     GOTO learn
 IF /I "%1"=="reflect"   GOTO reflect
+IF /I "%1"=="research"  GOTO research
 IF /I "%1"=="help"      GOTO usage
 GOTO unknown
 
@@ -87,6 +88,14 @@ REM  t reflect 7        -- last N days
 %PYTHON% "%TIRAMISU_ROOT%\scripts\reflect.py" %~2
 GOTO end
 
+:research
+REM  t research              -- show latest unread findings
+REM  t research run          -- force a research run now (foreground)
+REM  t research mute         -- mark pending findings as read without showing
+REM  t research list         -- list all historical findings files
+%PYTHON% "%TIRAMISU_ROOT%\scripts\research.py" %2
+GOTO end
+
 :usage
 echo.
 echo   Tiramisu  --  t ^<command^> [args]
@@ -101,6 +110,7 @@ echo   t implement "..."   Eclair writes code with full codebase access
 echo   t chat [question]   Conversational mode -- read-only, remembers context
 echo   t learn "text"      Teach the agents a preference
 echo   t reflect [days]    Weekly self-improvement report
+echo   t research [action] Cannoli's external research; auto-runs weekly
 echo   t help              This message
 echo.
 GOTO end

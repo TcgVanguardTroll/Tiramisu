@@ -33,6 +33,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from llm import invoke, FAST_MODEL
 from personas import pair as persona_pair, pet as persona_pet, color as persona_color
 import spinners as _spinners   # registers tiramisu spinners with rich
+import research as _research   # background research kicker + pending notice
 
 # Rich + prompt_toolkit are required at runtime. The dispatcher refuses to start
 # without them, so import failures are loud, not silent.
@@ -268,12 +269,20 @@ def repl():
             continue
 
     console.print(f"[bold cyan]{persona_pair('tiramisu')}  bye[/bold cyan]\n")
+    _research.print_pending_notice(console=console)
 
 
 def main():
+    # Autonomous research: if Cannoli's last scan was >7 days ago, kick off
+    # a fresh one in a detached background process. Non-blocking; the user
+    # never sees it run. They DO see a one-line notice on their next
+    # invocation if findings are waiting (printed below + at REPL exit).
+    _research.kick_off_background_if_stale()
+
     args = sys.argv[1:]
 
     if not args:
+        # REPL path -- notice surfaces in repl() after exit, see below
         repl()
         return
 
@@ -282,14 +291,20 @@ def main():
         console.print("[red][tiramisu][/red] empty input")
         sys.exit(1)
 
-    with console.status("[dim]Tiramisu is routing…[/dim]", spinner="dots"):
+    with console.status("[dim]Tiramisu is routing…[/dim]", spinner=_spinners.chosen()):
         cmd = route(user_input)
 
     preview = user_input if len(user_input) <= 60 else user_input[:60] + "..."
     console.print(f"\n[bold cyan]{persona_pair('tiramisu')}  Tiramisu[/bold cyan]  [dim]→[/dim]  "
                   f"[bold cyan]t {cmd}[/bold cyan]    [dim]({preview!r})[/dim]\n")
 
-    sys.exit(run_subcommand(cmd, user_input))
+    rc = run_subcommand(cmd, user_input)
+
+    # Surface any pending research findings AFTER the user's main command
+    # completed, so the notice doesn't interfere with their primary output.
+    _research.print_pending_notice(console=console)
+
+    sys.exit(rc)
 
 
 if __name__ == "__main__":

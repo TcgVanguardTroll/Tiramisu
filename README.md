@@ -77,6 +77,7 @@ If you already know which agent you want, skip the router:
 | `t learn "text"` | Teach the agents a preference (e.g. `t learn "prefer guard clauses"`) |
 | `t learn list` | Show all active preferences |
 | `t reflect [days]` | Madeleine's self-improvement report from accumulated data |
+| `t research` | Show Cannoli's latest external-source findings (auto-runs weekly) |
 | `t help` | Print the command list |
 
 `t` skips the ~200ms LLM router step. `tiramisu` is friendlier.
@@ -112,6 +113,34 @@ This data feeds back into every agent's system prompt automatically. After a few
 - `t reflect` proposes concrete agent-prompt edits grounded in real data, not theory
 
 ---
+
+## Autonomous external research
+
+Tiramisu watches the world for you. Every time you run `tiramisu`, **Cannoli** checks whether her last scan of external sources was more than 7 days ago. If it was, she spawns a detached background process that:
+
+1. Fetches Anthropic API release notes, the Anthropic Cookbook, aider docs, and Python release notes
+2. Diffs each source against the last cached copy (only **new** content is summarized — no full re-summaries)
+3. Asks Haiku to produce a markdown findings file with proposed steering edits ranked 1–5 for relevance
+4. Writes the file to `~/.tiramisu/.research/findings_YYYY-MM-DD.md`
+
+Next time you run `tiramisu`, you see a one-line notice:
+
+```
+🐶 Cannoli has 1 new finding(s). Run `t research` to see them, or `t research mute` to skip.
+```
+
+Run `t research` to view the findings (rendered as Markdown), which marks them as read. Or `t research mute` to ignore this week.
+
+**Critical safety property:** Findings are *proposed*, never auto-applied. The user copies any worthwhile suggestions into the steering files by hand. This is the autonomous version of the "learn before mutate" rule in `CLAUDE.md` §4.3.
+
+| `t research` action | What it does |
+|---|---|
+| `t research` (no args) | Show + mark-read the newest unread findings file |
+| `t research run` | Force a fresh scan now in the foreground |
+| `t research mute` | Mark all pending findings as read without showing them |
+| `t research list` | List all historical findings files chronologically |
+
+Cost: roughly $0.01–$0.05 per weekly run (Haiku-summarized deltas only). Tracked in `t reflect` under "Token & cost usage" like everything else.
 
 ## Steering composition
 
