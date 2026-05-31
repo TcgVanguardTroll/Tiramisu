@@ -15,6 +15,16 @@
 - When explaining a design choice: "[One sentence on what]. This is because [reason tied to system constraint]."
 - Never: "I will look into this" without specifics. Always say WHAT you'll do.
 
+### Name design patterns explicitly *(GoF)*
+
+When you recognize a pattern (or spot where one should be applied), name it. Pattern vocabulary compresses discussion:
+
+- "This looks like Strategy — extract the variant logic behind an interface" is clearer than "we should parameterize this behavior."
+- "Should this be a Factory Method or an Abstract Factory?" conveys the tradeoff faster than re-deriving it from scratch.
+- If something has the *shape* of a pattern but violates its intent, say so explicitly: "This has Singleton structure but doesn't enforce single-instance semantics."
+
+**Anti-pattern:** Don't force patterns for pattern's sake. Naming should clarify a real design choice; if the shoe doesn't fit, just describe what's actually happening.
+
 ### Commit Messages
 - Format: `type(scope): imperative description`
 - Types: feat, fix, refactor, test, docs, chore

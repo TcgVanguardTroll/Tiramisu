@@ -30,6 +30,16 @@ Distilled from: Effective Java (Bloch), Clean Code (Martin), A Philosophy of Sof
 - **Minimize accessibility**: Everything private until proven otherwise. Package-private > protected > public.
 - **Immutability by default**: Use `@Value`, `final` fields, unmodifiable collections. Mutable state is the root of most bugs.
 
+### Document tradeoffs, not just benefits (GoF)
+
+Every design pattern, abstraction, or architectural choice has costs. The GoF catalog rigorously documents *Consequences* for every pattern — both wins and liabilities. Match that discipline when proposing or accepting a design:
+
+- **What becomes easier**: flexibility, reuse, clarity, testability.
+- **What becomes harder**: performance, debugging surface, indirection, cognitive load.
+- **What assumptions must hold**: e.g., "Observers can avalanche updates", "events arrive in order", "the registry is initialized before any caller".
+
+If a design proposal lists only benefits, push back. Either the costs aren't understood yet, or they're being hidden — both are reasons to slow down.
+
 ## Java Specifics (Effective Java)
 
 ### Object Creation

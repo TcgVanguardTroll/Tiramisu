@@ -65,8 +65,13 @@ Personal coding conventions across Java, Python, Rust, and TypeScript. These rep
 
 ### Naming
 - `module_name`, `package_name`, `ClassName`, `method_name`, `GLOBAL_CONSTANT_NAME`
-- `_private_var` for internal members
 - Boolean variables: `is_`, `has_`, `can_`, `should_` prefixes
+- Trailing underscore (`class_`, `type_`) when a name would collide with a keyword
+
+#### Underscores for scope signaling *(PEP-8)*
+- **Single leading underscore** (`_internal_var`): module/class-level "internal" marker. Blocks export via `from module import *`. The standard privacy convention.
+- **Double leading underscore** (`__private_var`): triggers Python name mangling inside classes. Use only when designing for subclassing and you need collision-proof names. Rare.
+- **Never invent dunder names** (`__your_name__`): reserved for the language.
 
 ### Type Annotations
 - Always annotate public function signatures (args + return)
@@ -207,3 +212,28 @@ Personal coding conventions across Java, Python, Rust, and TypeScript. These rep
 - Working code over lengthy explanations
 - ARM64 architecture for containerized deployments (cost savings)
 - Prefer composition over inheritance (all languages)
+
+### Comments explain WHY, not WHAT *(PEP-8)*
+
+Assume readers can read code. Comments should add context the code can't:
+
+```python
+# GOOD — adds non-obvious intent
+if retry_count == 4:  # 4 is the carrier's hard rate-limit threshold
+    back_off()
+
+# BAD — restates what the code already says
+x, y = y, x  # swap x and y
+```
+
+If you find yourself describing *what* code does, the right fix is usually to make the code clearer, not to comment it.
+
+### Forbidden single-letter names *(PEP-8)*
+
+Never use these as variable names — they're visually ambiguous in most fonts:
+
+- `l` (lowercase L) — looks like `1` or `I`
+- `O` (uppercase O) — looks like `0`
+- `I` (uppercase I) — looks like `1` or `l`
+
+Use `i`, `j`, `k` for loop counters, `idx` for an index, or a descriptive name.
