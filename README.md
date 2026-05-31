@@ -135,14 +135,16 @@ Run `t research` to view the findings (rendered as Markdown), which marks them a
 
 | `t research` action | What it does |
 |---|---|
-| `t research` (no args) | Show + mark-read the newest unread findings file |
-| `t research run` | Force a fresh scan now in the foreground |
-| `t research mute` | Mark all pending findings as read without showing them |
-| `t research list` | List all historical findings files chronologically |
+| `t research` (no args) | Show + mark-read the newest unread file (findings or candidates) |
+| `t research run` | Scan watched sources now for new deltas |
+| `t research discover` | Scout GitHub Trending + HackerNews for new candidate sources |
+| `t research all` | Run + discover in one shot |
+| `t research mute` | Mark everything pending as read without showing |
+| `t research list` | Chronological history of findings + candidates |
 | `t research sources list` | Show active sources for this directory |
 | `t research sources add <url> [name] [focus]` | Add a source to your user config |
 | `t research sources remove <name-or-url>` | Drop a source |
-| `t research sources reset` | Write defaults to `~/.tiramisu/sources.json` for you to edit |
+| `t research sources reset` | Write defaults to `~/.tiramisu/sources.json` to edit |
 | `t research sources show` | Dump the raw JSON config |
 
 ### Source configuration — three layers
@@ -174,7 +176,31 @@ Example user file:
 
 You can add per-project sources too — e.g., put a `sources.json` in a project's `.tiramisu/` directory pointing at that project's docs, and Cannoli will watch those whenever you run `tiramisu` from inside that repo.
 
-Cost: roughly $0.01–$0.05 per weekly run (Haiku-summarized deltas only). Tracked in `t reflect` under "Token & cost usage" like everything else.
+### Two layers — anchors + discovery
+
+Cannoli watches the world in two ways:
+
+| Layer | What it does | Output | Cost / week |
+|---|---|---|---|
+| **Anchors** (watched sources) | Diffs the sources you've curated in `sources.json` | `findings_YYYY-MM-DD.md` | ~$0.04 |
+| **Discovery** (scouting) | Pulls trending repos from GitHub topics (`claude`, `ai-agents`, `anthropic`) and top HackerNews stories matching `claude anthropic` / `ai code review` / `ai dev tools`. Summarizes each as a *candidate source* you can add to your watched list. | `candidates_YYYY-MM-DD.md` | ~$0.10 |
+
+Both run automatically when you next launch `tiramisu` after >7 days — the dispatcher kicks off `t research all` as a detached background process. The pending notice combines both:
+
+```
+🐶 Cannoli has 2 new finding(s) and 3 candidate(s) waiting.
+   Run `t research` to see them.
+```
+
+Discovery uses **only free public APIs** (GitHub Search API + HN Algolia API). No API keys, no rate-limit headaches at this scale. Total weekly cost: **~$0.14**.
+
+When a candidate looks promising, copy the `Add command` from the candidates file:
+
+```
+**Add command:** `t research sources add https://example.com "Some Repo" "Why it matters"`
+```
+
+That graduates it from a one-off candidate to a permanently-watched anchor source — and you'll see deltas in `findings_*.md` going forward.
 
 ## Steering composition
 

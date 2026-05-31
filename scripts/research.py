@@ -145,25 +145,35 @@ def is_stale() -> bool:
     return age > timedelta(days=STALE_DAYS)
 
 
-def pending_count() -> int:
-    """Count of findings files the user has not yet seen."""
+def _is_research_output(path: Path) -> bool:
+    """Either findings_*.md (delta on watched source) or candidates_*.md
+    (new source proposals from discovery layer)."""
+    name = path.name
+    return name.startswith("findings_") or name.startswith("candidates_")
+
+
+def _all_research_files() -> list[Path]:
     if not RESEARCH_DIR.exists():
-        return 0
+        return []
+    return [f for f in RESEARCH_DIR.glob("*.md") if _is_research_output(f)]
+
+
+def pending_count() -> int:
+    """Count of unread findings + candidates files."""
     return sum(
-        1 for f in RESEARCH_DIR.glob("findings_*.md")
+        1 for f in _all_research_files()
         if not (f.with_suffix(f.suffix + READ_MARKER)).exists()
     )
 
 
 def latest_pending() -> Path | None:
-    """The newest unread findings file, if any."""
-    candidates = sorted(
-        (f for f in RESEARCH_DIR.glob("findings_*.md")
-         if not (f.with_suffix(f.suffix + READ_MARKER)).exists()),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    return candidates[0] if candidates else None
+    """The newest unread research output (findings OR candidates)."""
+    unread = [
+        f for f in _all_research_files()
+        if not (f.with_suffix(f.suffix + READ_MARKER)).exists()
+    ]
+    unread.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return unread[0] if unread else None
 
 
 def mark_read(findings_file: Path) -> None:
@@ -191,8 +201,9 @@ def kick_off_background_if_stale() -> None:
             # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
             creationflags = 0x00000008 | 0x00000200
 
+        # "all" runs both: deltas on watched sources + discovery scouting
         subprocess.Popen(
-            [sys.executable, str(ROOT / "scripts" / "research.py"), "run", "--quiet"],
+            [sys.executable, str(ROOT / "scripts" / "research.py"), "all", "--quiet"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
@@ -417,33 +428,238 @@ def show_latest() -> None:
 
 
 def mute_all_pending() -> None:
-    if not RESEARCH_DIR.exists():
-        print("Nothing to mute.")
-        return
     n = 0
-    for f in RESEARCH_DIR.glob("findings_*.md"):
+    for f in _all_research_files():
         marker = f.with_suffix(f.suffix + READ_MARKER)
         if not marker.exists():
             marker.touch()
             n += 1
-    print(f"Marked {n} pending finding(s) as read.")
+    print(f"Marked {n} pending finding(s) / candidate(s) as read.")
 
 
 def list_all() -> None:
-    if not RESEARCH_DIR.exists():
-        print("No research history yet. Run `t research run` to start.")
-        return
-    files = sorted(RESEARCH_DIR.glob("findings_*.md"), key=lambda p: p.stat().st_mtime)
+    files = sorted(_all_research_files(), key=lambda p: p.stat().st_mtime)
     if not files:
-        print("No research history yet.")
+        print("No research history yet. Run `t research run` (or `t research discover`) to start.")
         return
     print("\nResearch history:\n")
     for f in files:
         marker = f.with_suffix(f.suffix + READ_MARKER)
         status = "read" if marker.exists() else "UNREAD"
-        ts = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-        print(f"  [{status:6}]  {f.name}   ({ts})")
+        kind   = "candidates" if f.name.startswith("candidates_") else "findings  "
+        ts     = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        print(f"  [{status:6}]  {kind}  {f.name}   ({ts})")
     print()
+
+
+# -------- open discovery (GitHub Trending + HackerNews) --------
+#
+# This is the exploration layer that complements the curated sources above.
+# No API keys required -- both endpoints are free public APIs.
+#
+# Output goes to ~/.tiramisu/.research/candidates_YYYY-MM-DD.md, separate from
+# findings_*.md. Candidates are URLs the user might want to ADD as permanent
+# watched sources (via `t research sources add <url>`), not deltas from
+# existing watched sources.
+
+DISCOVERY_TOPICS = ["claude", "ai-agents", "anthropic"]
+DISCOVERY_HN_QUERIES = ["claude anthropic", "ai code review", "ai dev tools"]
+MAX_PER_BUCKET = 3  # how many candidates to take from each topic / query
+
+GITHUB_API_BASE = "https://api.github.com"
+HN_API_BASE     = "https://hn.algolia.com/api/v1"
+
+
+def _http_get_json(url: str) -> dict | None:
+    """GET a URL and parse as JSON. Returns None on any error."""
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Tiramisu-Cannoli/1.0",
+                 "Accept": "application/vnd.github+json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+            return json.loads(resp.read().decode("utf-8", errors="replace"))
+    except Exception as e:
+        print(f"[cannoli] GET {url} failed: {e}", file=sys.stderr)
+        return None
+
+
+def _fetch_github_topic(topic: str, since_date: str) -> list[dict]:
+    """Top repos with this topic, pushed within the last week. Free public API."""
+    q = f"topic:{topic}+pushed:>{since_date}"
+    url = f"{GITHUB_API_BASE}/search/repositories?q={q}&sort=stars&order=desc&per_page=5"
+    data = _http_get_json(url)
+    return (data or {}).get("items", [])[:MAX_PER_BUCKET]
+
+
+def _fetch_hn(query: str) -> list[dict]:
+    """HN stories matching this query, sorted by points. Free Algolia API."""
+    enc = urllib.request.quote(query)
+    url = f"{HN_API_BASE}/search?query={enc}&tags=story&hitsPerPage=5&numericFilters=points>20"
+    data = _http_get_json(url)
+    return (data or {}).get("hits", [])[:MAX_PER_BUCKET]
+
+
+CANDIDATE_PROMPT = """\
+You are Cannoli, the Tiramisu researcher. You've found a candidate URL that
+*might* be worth adding to the user's watched-sources list. Decide if it is.
+
+The user's existing watched sources are about: Anthropic API docs / Cookbook /
+aider / Python release notes. They care about: AI-assisted code review,
+prompt engineering, agent loops, tool use, Python idioms.
+
+CANDIDATE
+  Discovered via: {discovered_via}
+  Name:           {name}
+  URL:            {url}
+  Quick preview:  {preview}
+  Popularity:     {metric}
+
+CONTENT (truncated):
+{content}
+
+Output exactly this markdown structure:
+
+### {name}
+**Relevance:** <1-5 -- 5 = add this today, 3 = maybe, 1 = ignore>
+
+**Why:** <1-2 sentences -- what this is and whether it would actually
+inform Tiramisu's steering. Be honest. Saying "skip" is encouraged.>
+
+**Add command:** `t research sources add <appropriate-url> "<name>" "<focus>"`
+                 (if relevance >= 3, otherwise write "(skip -- relevance too low)")
+
+Rules:
+- "Ranked lists of AI tools" or generic blog posts -> usually relevance 1-2.
+- Repos with concrete patterns / code examples -> can be 3-5.
+- If the URL is paywalled, behind login, or 404s, mark relevance 1 and skip.
+- Don't pad. If you can't tell what it is, say so.
+"""
+
+
+def _summarize_candidate(c: dict) -> str:
+    """Fetch the candidate URL, ask Haiku for a one-section verdict."""
+    content = _fetch(c["url"])
+    if content.startswith("[error fetching"):
+        return (
+            f"### {c['name']}\n"
+            f"**Relevance:** 1/5\n\n"
+            f"**Why:** Could not fetch the page ({content}). Skip.\n\n"
+            f"**Add command:** (skip -- unreachable)\n"
+        )
+
+    # GitHub repo pages are huge -- prefer the README content if we can guess it
+    if "github.com" in c["url"] and "/raw.githubusercontent.com/" not in c["url"]:
+        # Best effort: try the README at the top-level
+        parts = c["url"].replace("https://github.com/", "").rstrip("/").split("/")
+        if len(parts) >= 2:
+            for branch in ("main", "master"):
+                readme = f"https://raw.githubusercontent.com/{parts[0]}/{parts[1]}/{branch}/README.md"
+                readme_content = _fetch(readme)
+                if not readme_content.startswith("[error"):
+                    content = readme_content
+                    c["url"] = readme  # report the raw URL so `add` works
+                    break
+
+    try:
+        return invoke(
+            prompt=CANDIDATE_PROMPT.format(
+                discovered_via=c["discovered_via"],
+                name=c["name"],
+                url=c["url"],
+                preview=c.get("preview") or "(none)",
+                metric=c.get("metric") or "(unknown)",
+                content=content[:8000],
+            ),
+            model=FAST_MODEL,
+            max_tokens=400,
+            temperature=0.2,
+        ).strip() + "\n"
+    except Exception as e:
+        return (
+            f"### {c['name']}\n"
+            f"**Relevance:** n/a\n\n"
+            f"**Why:** Summarization failed ({type(e).__name__}: {e}).\n\n"
+            f"**Add command:** (skip)\n"
+        )
+
+
+def discover(quiet: bool = False) -> Path | None:
+    """
+    Pull candidates from GitHub Trending + HackerNews, summarize each via
+    FAST_MODEL, write to candidates_YYYY-MM-DD.md. Returns the file path.
+    """
+    RESEARCH_DIR.mkdir(parents=True, exist_ok=True)
+
+    def log(msg: str) -> None:
+        if not quiet:
+            print(msg, flush=True)
+
+    log("\n🐶 Cannoli is scouting for new sources...\n")
+    cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    candidates: list[dict] = []
+
+    # GitHub repos with relevant topics
+    for topic in DISCOVERY_TOPICS:
+        log(f"  ↳ GitHub topic:{topic}")
+        for repo in _fetch_github_topic(topic, cutoff):
+            candidates.append({
+                "discovered_via": f"GitHub topic:{topic}",
+                "name":           repo.get("full_name") or repo.get("name", "?"),
+                "url":            repo.get("html_url", ""),
+                "preview":        (repo.get("description") or "")[:200],
+                "metric":         f"{repo.get('stargazers_count', 0):,} stars",
+            })
+
+    # HN stories matching topical queries
+    for query in DISCOVERY_HN_QUERIES:
+        log(f"  ↳ HN search: {query!r}")
+        for story in _fetch_hn(query):
+            url = story.get("url") or f"https://news.ycombinator.com/item?id={story.get('objectID', '')}"
+            candidates.append({
+                "discovered_via": f"HackerNews ({query})",
+                "name":           story.get("title", "?"),
+                "url":            url,
+                "preview":        "",
+                "metric":         f"{story.get('points', 0)} points",
+            })
+
+    # Dedupe by URL
+    seen = set()
+    unique = []
+    for c in candidates:
+        u = c["url"]
+        if u and u not in seen:
+            seen.add(u)
+            unique.append(c)
+    candidates = unique
+
+    log(f"\n  Found {len(candidates)} unique candidate(s). Summarizing...")
+
+    sections: list[str] = []
+    by_source: dict[str, list[str]] = {}
+    for c in candidates:
+        summary = _summarize_candidate(c)
+        by_source.setdefault(c["discovered_via"], []).append(summary)
+
+    for src, sums in by_source.items():
+        sections.append(f"## Found via {src}\n\n" + "\n".join(sums))
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    out_path = RESEARCH_DIR / f"candidates_{today}.md"
+    body = (
+        f"# Cannoli candidates -- {today}\n\n"
+        "URLs Cannoli scouted that you might want to add to your watched "
+        "sources. **Nothing is auto-added.** Copy the `Add command` for any "
+        "candidate you want to graduate to a permanent watched source.\n\n"
+        + "\n\n".join(sections)
+        + "\n"
+    )
+    out_path.write_text(body, encoding="utf-8")
+
+    log(f"\n✓ Candidates written to: {out_path}\n")
+    return out_path
 
 
 # -------- sources management --------
@@ -593,6 +809,11 @@ def main():
         show_latest()
     elif args.action == "run":
         run_research(quiet=args.quiet)
+    elif args.action == "discover":
+        discover(quiet=args.quiet)
+    elif args.action == "all":
+        run_research(quiet=args.quiet)
+        discover(quiet=args.quiet)
     elif args.action == "mute":
         mute_all_pending()
     elif args.action == "list":
@@ -601,7 +822,7 @@ def main():
         _sources_subcmd(args.rest)
     else:
         print(f"Unknown action: {args.action!r}")
-        print("Valid: show | run | mute | list | sources [...]")
+        print("Valid: show | run | discover | all | mute | list | sources [...]")
         sys.exit(1)
 
 
