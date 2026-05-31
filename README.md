@@ -195,6 +195,36 @@ tiramisu
 
 ---
 
+## Output rendering modes
+
+Cookie's reviews, Croissant's plans, and Madeleine's reports can render in three ways via the `TIRAMISU_RENDER` env var:
+
+| `TIRAMISU_RENDER` | Behavior |
+|---|---|
+| `both` *(default)* | Stream raw text live, then print a rendered Markdown view below a divider. Two-phase: best of both — real-time feedback plus a polished final view. |
+| `stream` | Stream raw text only. No rendered view. Cleanest for piping output to files or grepping. |
+| `rendered` | Silent buffer with a thinking-spinner during the API call, then print the rendered Markdown only. No raw text shown. |
+
+Set per session:
+```powershell
+$env:TIRAMISU_RENDER = "rendered"
+t scan
+```
+
+Or permanently in your PowerShell profile:
+```powershell
+# add to $PROFILE
+$env:TIRAMISU_RENDER = "rendered"
+```
+
+POSIX:
+```bash
+# add to ~/.bashrc or ~/.zshrc
+export TIRAMISU_RENDER=rendered
+```
+
+`TIRAMISU_NO_RENDER=1` is kept as a deprecated alias for `stream`.
+
 ## Per-user data
 
 | Path | What lives there |

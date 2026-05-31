@@ -159,16 +159,28 @@ def _worth_rendering(text: str) -> bool:
     return any(ind in text for ind in _MD_INDICATORS)
 
 
-def _print_rendered_view(text: str) -> None:
-    """After streaming, print a single clean Markdown render below a divider.
-    No live re-render -- one-shot console.print(Markdown(...)) avoids the
-    overflow / append problem that broke rich.Live + Markdown on long output.
-    Set TIRAMISU_NO_RENDER=1 to suppress (e.g., in CI or piped output)."""
+def _render_mode() -> str:
+    """
+    Read TIRAMISU_RENDER to decide how to present streaming responses.
+
+      both     (default) -- stream raw, then print rendered view below a divider
+      stream             -- stream raw only, no rendered view
+      rendered           -- silent buffer with a spinner, then print rendered only
+
+    TIRAMISU_NO_RENDER=1 is kept as a deprecated alias for `stream`.
+    """
+    mode = (os.environ.get("TIRAMISU_RENDER") or "").lower().strip()
+    if mode in {"both", "stream", "rendered"}:
+        return mode
     if os.environ.get("TIRAMISU_NO_RENDER"):
-        return
+        return "stream"
+    return "both"
+
+
+def _print_rendered_view(text: str) -> None:
+    """One-shot Markdown render below a divider. Called after streaming."""
     if not _worth_rendering(text):
         return
-
     try:
         from rich.console import Console
         from rich.markdown import Markdown
@@ -181,17 +193,61 @@ def _print_rendered_view(text: str) -> None:
         pass
 
 
+def _silent_then_render(client, kwargs, model) -> str:
+    """
+    rendered-only mode: silent buffer with a spinner while the response streams,
+    then print a single Markdown render. The spinner is critical -- without it
+    the terminal looks frozen for the whole API call.
+    """
+    try:
+        from rich.console import Console
+        from rich.markdown import Markdown
+    except Exception:
+        # Fallback: lose the rendering, but never crash
+        return _plain_stream(client, kwargs, model)
+
+    console = Console()
+    buffer = []
+
+    with console.status("[dim]thinking...[/dim]", spinner="dots"):
+        with client.messages.stream(**kwargs) as stream:
+            for text in stream.text_stream:
+                buffer.append(text)
+            final = stream.get_final_message()
+
+    text = "".join(buffer)
+    if text.strip():
+        console.print(Markdown(text))
+
+    _log_api_usage(final.usage, model)
+    return text
+
+
+def _plain_stream(client, kwargs, model) -> str:
+    """Plain streaming, no rendering. Used by stream and both modes (phase 1)."""
+    full = []
+    with client.messages.stream(**kwargs) as stream:
+        for text in stream.text_stream:
+            print(text, end="", flush=True)
+            full.append(text)
+        final = stream.get_final_message()
+    print()
+    _log_api_usage(final.usage, model)
+    return "".join(full)
+
+
 def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
     """
-    Two-phase response:
-      Phase 1 -- plain streaming so the user sees text arriving live.
-      Phase 2 -- after the stream finishes, print ONE rendered Markdown view
-                 below a divider (only if the content has real markdown
-                 structure and is long enough to benefit).
+    Streaming response with optional Markdown rendering.
 
-    This sidesteps the rich.Live + Markdown overflow bug (the cursor can't
-    redraw past terminal height, so each chunk appears to duplicate). Doing
-    the render exactly once, after streaming is done, has no such problem.
+    Behavior is controlled by the TIRAMISU_RENDER env var:
+      both     (default) -- stream raw, then print rendered view below a divider
+      stream             -- raw only, no rendered view
+      rendered           -- silent buffer with spinner, then rendered view only
+
+    The render-only mode avoids any duplication entirely (single render call,
+    after streaming completes). The both mode preserves real-time feedback
+    while still giving you a polished version to scroll back to.
 
     Returns the raw text for callers that need to parse the response.
     """
@@ -206,19 +262,16 @@ def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=
             {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
         ]
 
-    # Phase 1: plain streaming
-    full = []
-    with client.messages.stream(**kwargs) as stream:
-        for text in stream.text_stream:
-            print(text, end="", flush=True)
-            full.append(text)
-        final = stream.get_final_message()
-    print()
+    mode = _render_mode()
 
-    text = "".join(full)
+    if mode == "rendered":
+        # We track token usage inside _silent_then_render so we don't double-log
+        return _silent_then_render(client, kwargs, model)
 
-    # Phase 2: one-shot rendered view, only if it helps
-    _print_rendered_view(text)
+    # mode is "both" or "stream" -- plain stream first
+    text = _plain_stream(client, kwargs, model)
 
-    _log_api_usage(final.usage, model)
+    if mode == "both":
+        _print_rendered_view(text)
+
     return text
