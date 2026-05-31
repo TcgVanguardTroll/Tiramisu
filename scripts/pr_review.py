@@ -24,7 +24,7 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from llm import invoke_stream, DEFAULT_MODEL
+from llm import invoke_stream_markdown, DEFAULT_MODEL
 from steering import load_steering, detect_languages
 from personas import pair as persona_pair
 
@@ -308,7 +308,7 @@ def main():
     print()
     print("-" * 60)
 
-    review_text = invoke_stream(
+    review_text = invoke_stream_markdown(
         prompt=PR_PROMPT.format(
             log=log[:2000],
             diff=diff[:MAX_DIFF_CHARS],

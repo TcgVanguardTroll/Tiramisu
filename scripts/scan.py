@@ -18,7 +18,7 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from llm import invoke_stream, DEFAULT_MODEL
+from llm import invoke_stream_markdown, DEFAULT_MODEL
 from steering import load_steering, detect_languages
 
 SOURCE_EXTENSIONS = {
@@ -125,7 +125,7 @@ def main():
     print(f"\n  {target}\n")
     print("-" * 60)
 
-    invoke_stream(
+    invoke_stream_markdown(
         prompt=PROMPT.format(context=context),
         system=system,
         model=DEFAULT_MODEL,

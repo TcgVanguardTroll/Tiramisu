@@ -146,3 +146,47 @@ def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
     print()
     _log_api_usage(final.usage, model)
     return "".join(full)
+
+
+def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
+    """
+    Like invoke_stream, but renders the response as live Markdown using rich.
+    Headings get formatted, fenced code blocks get syntax highlighting.
+    Returns the raw text (not rendered) so calling code can still parse it.
+
+    Use this for agent responses meant to be read (reviews, plans, reports).
+    Use plain invoke_stream for short / structured outputs where rendering
+    doesn't help.
+    """
+    from rich.console import Console
+    from rich.live import Live
+    from rich.markdown import Markdown
+
+    client = _client()
+    kwargs = dict(
+        model=model,
+        max_tokens=max_tokens,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    if system:
+        kwargs["system"] = [
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+        ]
+
+    console = Console()
+    buffer = []
+
+    # refresh_per_second=8 keeps the live re-renders smooth without flickering.
+    # vertical_overflow="visible" lets long responses scroll the terminal.
+    with Live("", console=console, refresh_per_second=8,
+              vertical_overflow="visible", auto_refresh=False) as live:
+        with client.messages.stream(**kwargs) as stream:
+            for text in stream.text_stream:
+                buffer.append(text)
+                content = "".join(buffer)
+                if content.strip():
+                    live.update(Markdown(content), refresh=True)
+            final = stream.get_final_message()
+
+    _log_api_usage(final.usage, model)
+    return "".join(buffer)

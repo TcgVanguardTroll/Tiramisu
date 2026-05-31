@@ -22,7 +22,7 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from llm import invoke_stream, FAST_MODEL
+from llm import invoke_stream_markdown, FAST_MODEL
 from steering import load_steering, detect_languages
 import memory
 
@@ -148,7 +148,7 @@ def main():
     if file_context:
         prompt += f"\n\n## Full file context\n\n{file_context}"
 
-    review = invoke_stream(
+    review = invoke_stream_markdown(
         prompt=prompt,
         system=system,
         model=FAST_MODEL,

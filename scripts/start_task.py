@@ -21,7 +21,7 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from llm import invoke_stream, DEFAULT_MODEL
+from llm import invoke_stream_markdown, DEFAULT_MODEL
 from steering import load_steering
 from personas import pair as persona_pair
 
@@ -75,7 +75,7 @@ def scope_check(plan: str, system: str):
         if not question:
             break
         print()
-        invoke_stream(
+        invoke_stream_markdown(
             prompt=SCOPE_CHECK_TEMPLATE.format(plan=plan, question=question),
             system=system,
             model=DEFAULT_MODEL,
