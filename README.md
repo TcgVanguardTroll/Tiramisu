@@ -69,7 +69,7 @@ If you already know which agent you want, skip the router:
 | `t hook` | Install Cookie + Éclair git hooks in the current repo (one time per repo) |
 | `t task "desc"` | Croissant scopes the task — acceptance criteria, out-of-scope, risks |
 | `t implement "desc"` | Éclair writes code with full codebase access via tool use |
-| `t chat [question]` | Conversational mode — read-only tools, remembers context within the session |
+| `t chat [question]` | Conversational mode — read + edit + shell tools with per-action confirmation, remembers context |
 | `t scan [path]` | Cookie reads a file or directory in full and reports issues |
 | `t review` | Cookie reviews the currently staged diff |
 | `t pr [base]` | Cookie reviews your whole branch vs main |

@@ -62,7 +62,7 @@ CHAT_HISTORY_FILE = Path(
 EXIT_WORDS = {"exit", "quit", "bye", "q", ":q"}
 
 
-# ----- read-only tools -----
+# ----- tools (read + write + shell, with confirmation on write/shell) -----
 
 TOOLS = [
     {
@@ -108,6 +108,50 @@ TOOLS = [
             "required": ["pattern"],
         },
     },
+    {
+        "name": "edit_file",
+        "description": (
+            "Make a surgical edit by replacing exact text in a file. "
+            "old_string must match EXACTLY (including whitespace), and must be UNIQUE in the file. "
+            "Use this for modifying existing code; prefer it over write_file."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path":       {"type": "string"},
+                "old_string": {"type": "string"},
+                "new_string": {"type": "string"},
+            },
+            "required": ["path", "old_string", "new_string"],
+        },
+    },
+    {
+        "name": "write_file",
+        "description": (
+            "Write content to a file. OVERWRITES if it exists, creates it otherwise. "
+            "Use for NEW files or full rewrites. For modifying existing code, prefer edit_file."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path":    {"type": "string"},
+                "content": {"type": "string"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "run_shell",
+        "description": (
+            "Run a shell command. Use sparingly -- for running tests, linters, builds. "
+            "User will be prompted to confirm before the command runs."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        },
+    },
 ]
 
 
@@ -126,8 +170,20 @@ def _validate_path(p: Path) -> str | None:
     return None
 
 
+def _confirm(prompt_msg: str, default_yes: bool = True) -> bool:
+    """Ask the user [Y/n] (or [y/N]) before a write/shell action."""
+    suffix = "[Y/n]" if default_yes else "[y/N]"
+    try:
+        ans = input(f"    {prompt_msg} {suffix} ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return False
+    if not ans:
+        return default_yes
+    return ans == "y"
+
+
 def execute_tool(name, tool_input) -> str:
-    """Execute a read-only tool. Returns string result for the model."""
+    """Execute a chat tool. Read tools run silently; write/shell tools prompt."""
     try:
         if name == "read_file":
             p = Path(tool_input["path"])
@@ -203,6 +259,71 @@ def execute_tool(name, tool_input) -> str:
                     break
             return "\n".join(results) if results else "(no matches)"
 
+        elif name == "edit_file":
+            p   = Path(tool_input["path"])
+            old = tool_input["old_string"]
+            new = tool_input["new_string"]
+            if err := _validate_path(p):
+                return err
+            if not p.exists():
+                return f"Error: file not found: {p}"
+            content = p.read_text(encoding="utf-8", errors="replace")
+            if old not in content:
+                return f"Error: old_string not found in {p}. Re-read the file and try again with exact whitespace."
+            count = content.count(old)
+            if count > 1:
+                return (f"Error: old_string appears {count} times in {p} -- not unique. "
+                        "Include more surrounding context to make it unique.")
+            print(f"\n  [edit] {p}")
+            for line in old.splitlines()[:6]:
+                print(f"         - {line}")
+            if len(old.splitlines()) > 6:
+                print(f"         - ... ({len(old.splitlines()) - 6} more lines)")
+            for line in new.splitlines()[:6]:
+                print(f"         + {line}")
+            if len(new.splitlines()) > 6:
+                print(f"         + ... ({len(new.splitlines()) - 6} more lines)")
+            if not _confirm("apply?"):
+                return "User declined the edit."
+            p.write_text(content.replace(old, new, 1), encoding="utf-8")
+            return f"Edited {p}."
+
+        elif name == "write_file":
+            p       = Path(tool_input["path"])
+            content = tool_input["content"]
+            if err := _validate_path(p):
+                return err
+            is_new = not p.exists()
+            label  = "create" if is_new else "overwrite"
+            print(f"\n  [{label}] {p}  ({len(content)} chars)")
+            if not is_new:
+                old = p.read_text(encoding="utf-8", errors="replace")
+                print(f"           replacing {len(old)} existing chars")
+            preview = content[:200].replace("\n", "\n           ")
+            print(f"           preview: {preview}{'...' if len(content) > 200 else ''}")
+            if not _confirm("apply?"):
+                return "User declined the write."
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+            return f"Wrote {len(content)} chars to {p}."
+
+        elif name == "run_shell":
+            cmd = tool_input["command"]
+            print(f"\n  [shell] {cmd}")
+            if not _confirm("run?", default_yes=False):
+                return "User declined to run the command."
+            try:
+                import subprocess
+                result = subprocess.run(
+                    cmd, shell=True, capture_output=True, text=True, timeout=180
+                )
+            except subprocess.TimeoutExpired:
+                return "Error: command timed out after 180s."
+            out = (result.stdout or "") + (result.stderr or "")
+            if len(out) > 5000:
+                out = out[:5000] + f"\n... [truncated -- {len(out)} chars total]"
+            return f"Exit code: {result.returncode}\n{out}"
+
         else:
             return f"Error: unknown tool '{name}'"
 
@@ -217,23 +338,37 @@ CHAT_MODE_INSTRUCTIONS = """
 # CHAT MODE
 
 You're in conversational mode with the user. They want to think out loud,
-explore the codebase, plan, or ask questions.
+explore the codebase, plan, or ask questions -- and sometimes have you
+actually do the work right there in chat.
 
-You have READ tools (read_file, glob, grep, list_files) but you NEVER edit
-code yourself in this mode. When the user wants action, suggest the specific
-`t` command they should run:
-  - Want code written?     "exit chat and run:  t implement <description>"
-  - Want a scope plan?     "run:  t task <description>"
-  - Want a code review?    "run:  t scan <path>"
-  - Want a PR review?      "run:  t pr"
+You have full tools:
+  READ:  read_file, glob, grep, list_files
+  WRITE: edit_file, write_file       (user confirms each one with Y/n)
+  SHELL: run_shell                   (user confirms each command with y/N)
+
+When the user asks "can you do that for me?" or "apply it" or "go ahead",
+YOU ARE THE AGENT THAT DOES IT. Don't suggest they exit chat and run
+`t implement` -- just call edit_file or write_file. The user will see a
+preview and confirm.
+
+When to suggest a different command instead:
+  - Want a deep code review across many files?    "run:  t scan <path>"
+  - Want a structured PR review?                  "run:  t pr"
+  - Want Croissant to define WHEN/THEN/SHALL scope? "run:  t task <description>"
+These are higher-level workflows with their own outputs. Quick file edits
+belong here in chat.
 
 Style:
 - Conversational and concise, NOT a structured report.
-- Use the conversation history. If they say "it" or "that function", figure
-  it out from context. Don't ask for clarification unless truly ambiguous.
+- Read first, then plan in one sentence, then call the tool. Don't ask
+  permission to call a tool; the user will see the confirmation prompt
+  and decide there.
+- Use the conversation history. If they say "it" or "that function",
+  figure it out from context.
 - Keep most responses to 1-3 paragraphs unless they ask for depth.
-- Don't restate what was already established.
 - When you reference code, cite the file:line so they can jump there.
+- Surgical: touch only what the user asked about, no "while I'm here"
+  cleanup of adjacent code.
 """
 
 
@@ -249,9 +384,9 @@ PROMPT_STYLE = Style.from_dict({
 
 def render_banner():
     body = (
-        "[bold]Chat mode.[/bold] Tiramisu can read files, search code, "
-        "and remember context.\n"
-        "[dim]She does NOT edit code -- for that, exit and run `t implement`.[/dim]\n"
+        "[bold]Chat mode.[/bold] Tiramisu reads, edits, and runs shell commands.\n"
+        "[dim]Writes prompt you with[/dim] [cyan]Y/n[/cyan][dim] before applying. "
+        "Shell runs prompt with[/dim] [cyan]y/N[/cyan].\n"
         "[dim]Type[/dim] [cyan]exit[/cyan][dim] or Ctrl+D to leave chat.[/dim]"
     )
     console.print(Panel(body, title=f"{persona_pair('tiramisu')}  Tiramisu — chat", border_style="cyan", padding=(0, 2)))
