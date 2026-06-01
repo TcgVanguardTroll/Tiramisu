@@ -19,7 +19,7 @@ import sys
 import hashlib
 import difflib
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -303,7 +303,12 @@ def stats_since(days: int = 30) -> dict[str, Any]:
     """Aggregate stats for `t reflect`."""
     try:
         with _connection() as conn:
-            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            # tz-naive isoformat to match SQLite's CURRENT_TIMESTAMP column
+            # which is also stored as a naive UTC string. datetime.utcnow()
+            # was deprecated in Python 3.12; this is the supported equivalent.
+            cutoff_dt = (datetime.now(timezone.utc).replace(tzinfo=None)
+                         - timedelta(days=days))
+            cutoff = cutoff_dt.isoformat()
 
             reviews = conn.execute(
                 "SELECT outcome, COUNT(*) FROM reviews WHERE ts > ? GROUP BY outcome",

@@ -23,11 +23,54 @@ def tmp_tiramisu_home(monkeypatch, tmp_path):
     Isolate ~/.tiramisu for a test. Sets TIRAMISU_HOME to a fresh tmp dir
     so `memory.py` writes to a throwaway SQLite file, not the user's real
     learnings.db.
+
+    Sets BOTH the env var AND patches already-imported modules' module-level
+    constants. The env var alone is not enough: `memory.py` does
+        TIRAMISU_HOME = Path(os.environ.get("TIRAMISU_HOME", ...))
+        DB_PATH = TIRAMISU_HOME / "learnings.db"
+    at import time, so if memory was already imported by a previous test (or
+    by another test file via the import cache), the env var change has no
+    effect on its DB_PATH. Same story for research.py.
     """
     home = tmp_path / "tiramisu_home"
     home.mkdir()
     monkeypatch.setenv("TIRAMISU_HOME", str(home))
+
+    # Patch already-imported modules' captured paths.
+    for mod_name, attrs in (
+        ("memory",   ("TIRAMISU_HOME", "DB_PATH")),
+        ("research", ("TIRAMISU_HOME",)),
+    ):
+        try:
+            mod = __import__(mod_name)
+        except ImportError:
+            continue
+        if hasattr(mod, "TIRAMISU_HOME"):
+            monkeypatch.setattr(mod, "TIRAMISU_HOME", home)
+        if "DB_PATH" in attrs and hasattr(mod, "DB_PATH"):
+            monkeypatch.setattr(mod, "DB_PATH", home / "learnings.db")
+
     yield home
+
+
+@pytest.fixture
+def clear_steering_cache():
+    """
+    Steering's `_read` is `@lru_cache`d so tests that mutate files between
+    calls need to invalidate the cache, otherwise the second call returns the
+    cached pre-mutation content.
+    """
+    try:
+        import steering
+        steering._read.cache_clear()
+    except ImportError:
+        pass
+    yield
+    try:
+        import steering
+        steering._read.cache_clear()
+    except ImportError:
+        pass
 
 
 @pytest.fixture
