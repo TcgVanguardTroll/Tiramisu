@@ -13,19 +13,19 @@ docs that actually matter, in order of read-importance:
    schema discipline, cross-platform CI. Each section says what to do if
    you find yourself wanting to relax the rule.
 
-2. **[agents/README.md](../agents/README.md)** — how to write a Tiramisu
+3. **[agents/README.md](../agents/README.md)** — how to write a Tiramisu
    persona. The template, the anti-patterns, and how the personas compose
    with the shared steering docs.
 
-3. **[engineering-principles.md](../engineering-principles.md)** — universal
+4. **[engineering-principles.md](../engineering-principles.md)** — universal
    design principles, distilled from canonical books. These get auto-injected
    into every agent's system prompt, so they're not just suggestions — they
    shape what the agents themselves do.
 
-4. **[code-style.md](../code-style.md)** — per-language style. Filtered by
+5. **[code-style.md](../code-style.md)** — per-language style. Filtered by
    the file extensions in scope, then injected into the system prompt.
 
-5. **[communication-style.md](../communication-style.md)** — tone, commit
+6. **[communication-style.md](../communication-style.md)** — tone, commit
    message format, code-review patterns.
 
 ## Common recipes

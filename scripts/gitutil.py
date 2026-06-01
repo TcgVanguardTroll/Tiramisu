@@ -65,9 +65,21 @@ def run_git(*args, **kwargs):
     Convenience wrapper: subprocess.run([git_exe(), *args], **kwargs).
     Sets sensible defaults (capture_output=True, text=True). Raises a clear
     RuntimeError if git is genuinely missing.
+
+    Encoding: we FORCE encoding="utf-8", errors="replace" rather than letting
+    subprocess fall back to the system codec. On Windows the default is cp1252,
+    which crashes with UnicodeDecodeError the moment git's output contains any
+    multi-byte UTF-8 character (emoji in a doc, accented author name, é in
+    INVARIANTS.md, etc.). git itself emits UTF-8 by default, so this matches
+    reality on every platform. errors="replace" is the safety net for the rare
+    case where a repo contains genuinely non-UTF-8 bytes (e.g., a Latin-1
+    legacy file in an older repo) -- better to substitute a replacement char
+    than to crash a git hook.
     """
     kwargs.setdefault("capture_output", True)
     kwargs.setdefault("text", True)
+    kwargs.setdefault("encoding", "utf-8")
+    kwargs.setdefault("errors", "replace")
     try:
         return subprocess.run([git_exe(), *args], **kwargs)
     except FileNotFoundError:
