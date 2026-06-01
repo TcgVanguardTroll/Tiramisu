@@ -97,7 +97,10 @@ tiramisu/
 ├── docs/                         Deep-dive docs for advanced features
 │   ├── RESEARCH.md               Cannoli's research subsystem
 │   ├── UI.md                     Render modes, spinners, REPL keys
-│   └── DEVELOPING.md             Pointer for contributors / AI agents working on this repo
+│   ├── DEVELOPING.md             Pointer for contributors / AI agents working on this repo
+│   └── INVARIANTS.md             The rules the test suite enforces (read before touching safety/schema)
+├── tests/                        91-test pytest suite (safety, router, steering, memory, sources)
+├── .github/workflows/test.yml    CI matrix: 3 OS x 2 Python on every push/PR
 ├── code-style.md                 Per-language style rules (Java/Python/Rust/TS)
 ├── engineering-principles.md     Universal design rules (Bloch/Martin/Ousterhout/etc.)
 ├── communication-style.md        Tone, commit format, PR template
@@ -236,12 +239,35 @@ If asked to do any of these, raise it before implementing:
 
 ## 8. Testing posture
 
-Tiramisu currently has **no automated test suite** (this is a known gap).
+Tiramisu has a **91-test pytest suite** in `tests/` covering safety
+invariants, router behavior, persona uniqueness, steering composition
+order, memory CRUD + schema migrations, and research source config.
+Runs in ~10s with no API calls. CI gates every PR across 3 OS × 2 Python.
+
+```sh
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+The rules the suite pins down are documented in
+**[docs/INVARIANTS.md](docs/INVARIANTS.md)** — read it before changing
+anything in `chat.py`, `dispatch.py`, `steering.py`, or `memory.py`.
+
 When you add tests:
-- Put them in `tests/` (mirror the source layout: `tests/test_personas.py`)
-- Use plain `assert` statements; no test framework needed yet
-- Prefer fast, deterministic unit tests on pure functions (`steering._parse_h2_sections`, `personas.pair`, `dispatch.route` with a mock client)
-- Avoid tests that hit the real API. Mock `llm.invoke` / `invoke_stream`.
+- Use the existing pytest fixtures from `tests/conftest.py`
+  (`tmp_tiramisu_home`, `tmp_workspace`, `mock_invoke`,
+  `clear_steering_cache`). The fixtures handle the import-time capture
+  gotchas; rolling your own monkeypatching usually misses them.
+- Never call the real Anthropic API. `mock_invoke` patches every
+  consumer module's local `invoke` reference because
+  `from llm import invoke` captures the function at import time.
+- Adding a new dangerous tool surface (file write, shell exec, network)
+  is a hard stop — write the safety test first, then the feature.
+
+When you change `learnings.db` schema:
+- **Append a migration** to `MIGRATIONS` in `scripts/memory.py`.
+  Never edit an existing migration — users have applied the original.
+- See `docs/INVARIANTS.md §7` for the full schema-discipline ruleset.
 
 ---
 

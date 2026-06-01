@@ -96,11 +96,115 @@ CREATE TABLE IF NOT EXISTS overrides (
 """
 
 
+# --------------------------------------------------------------------------
+# Schema versioning
+# --------------------------------------------------------------------------
+# Every connection runs the baseline SCHEMA (idempotent: every CREATE uses
+# IF NOT EXISTS). On top of that we maintain an ordered list of migrations
+# that change the schema beyond the baseline. Each migration records itself
+# in `schema_migrations` so re-running the framework is a no-op.
+#
+# Rules for adding a migration
+#   1. Pick the next integer version (current MIGRATIONS list + 1).
+#   2. SQL must be SAFE on an already-migrated DB if accidentally re-run
+#      (CREATE INDEX IF NOT EXISTS, ALTER TABLE ADD COLUMN with a default,
+#      etc.). The framework protects against re-runs but defensive SQL is
+#      free insurance.
+#   3. Never EDIT an existing migration -- append a new one instead. Old
+#      installs have already applied the original; rewriting it would
+#      desync history.
+#   4. Add a test in tests/test_memory.py that asserts the new column /
+#      index / constraint actually exists after migration.
+#
+# See docs/INVARIANTS.md "Schema discipline" for the rationale.
+
+# version 1 is the baseline (everything in SCHEMA above). Versions 2+ are
+# changes applied on top.
+MIGRATIONS = [
+    (
+        2,
+        "Add commit_drafts.has_blockers to track Cookie BLOCKER overrides",
+        # If Cookie's pre-commit review flagged a BLOCKER and the user
+        # committed anyway (--no-verify or by fixing nothing), we want to
+        # know about it. `t reflect` can then ask: how aggressive is Cookie
+        # being, and how often does the user override? Default 0 means
+        # "no blocker / not yet known."
+        "ALTER TABLE commit_drafts ADD COLUMN has_blockers INTEGER DEFAULT 0",
+    ),
+]
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """
+    Bring the connected DB up to the current schema version.
+
+    Steps:
+      1. Run the baseline SCHEMA (idempotent thanks to IF NOT EXISTS).
+      2. Create the schema_migrations table if missing.
+      3. If schema_migrations is empty, this is either a fresh DB or an
+         old pre-versioning install. Mark v1 as applied either way -- the
+         baseline SCHEMA is identical to what v1 represents, and we just
+         ran it above.
+      4. For each row in MIGRATIONS whose version isn't recorded, execute
+         the SQL and record the version. Stop on the first failure (don't
+         leave the DB in a partially-migrated state).
+    """
+    conn.executescript(SCHEMA)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version     INTEGER PRIMARY KEY,
+            description TEXT,
+            applied_at  TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    applied = {
+        row[0] for row in
+        conn.execute("SELECT version FROM schema_migrations").fetchall()
+    }
+
+    # Baseline: if nothing's recorded yet, mark v1 as applied. This handles
+    # both fresh installs (schema just created above) and pre-versioning
+    # installs (schema already existed). In both cases the on-disk state
+    # matches v1.
+    if not applied:
+        conn.execute(
+            "INSERT INTO schema_migrations (version, description) VALUES (1, ?)",
+            ("baseline schema",),
+        )
+        applied.add(1)
+
+    # Apply pending migrations in version order.
+    for version, description, sql in sorted(MIGRATIONS, key=lambda m: m[0]):
+        if version in applied:
+            continue
+        try:
+            conn.executescript(sql)
+            conn.execute(
+                "INSERT INTO schema_migrations (version, description) "
+                "VALUES (?, ?)",
+                (version, description),
+            )
+        except sqlite3.OperationalError as e:
+            # Common case: ADD COLUMN failed because someone re-ran a
+            # migration manually. If we can see the column already exists,
+            # mark the migration as applied and continue. Otherwise re-raise.
+            msg = str(e).lower()
+            if "duplicate column" in msg or "already exists" in msg:
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (?, ?)",
+                    (version, description + " (detected as already applied)"),
+                )
+                continue
+            raise
+
+
 def get_conn() -> sqlite3.Connection:
     TIRAMISU_HOME.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), timeout=5)
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.executescript(SCHEMA)
+    _apply_migrations(conn)
     return conn
 
 

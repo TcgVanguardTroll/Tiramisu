@@ -7,6 +7,12 @@ docs that actually matter, in order of read-importance:
    nine architectural rules that hold the codebase together). Anyone writing
    code here should have read this first.
 
+2. **[INVARIANTS.md](INVARIANTS.md)** — the rules the test suite enforces:
+   path sandboxing, confirmation gating, router fallbacks, persona
+   uniqueness, steering composition order, memory failure isolation,
+   schema discipline, cross-platform CI. Each section says what to do if
+   you find yourself wanting to relax the rule.
+
 2. **[agents/README.md](../agents/README.md)** — how to write a Tiramisu
    persona. The template, the anti-patterns, and how the personas compose
    with the shared steering docs.
@@ -38,12 +44,43 @@ See `CLAUDE.md` §5 for the exact steps. Briefly:
 
 ## Testing posture
 
-Tiramisu currently has **no automated test suite**. When you add tests:
+Tiramisu has a **91-test pytest suite** in `tests/` covering safety
+invariants, router behavior, persona uniqueness, steering composition,
+memory CRUD + migrations, and research source config. It runs in ~10s
+with no API calls (the `mock_invoke` fixture replaces `llm.invoke`).
 
-- Put them in `tests/` (mirror the source layout)
-- Use plain `assert` — no framework needed yet
-- Prefer fast, deterministic unit tests on pure functions (`steering._parse_h2_sections`, `personas.pair`, `dispatch.route` with a mock client)
-- Avoid tests that hit the real Anthropic API. Mock `llm.invoke` / `invoke_stream_markdown`.
+```sh
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+CI runs the full matrix on every push and PR — Ubuntu / macOS / Windows
+× Python 3.12 / 3.13. See `.github/workflows/test.yml`. The CI badge at
+the top of the README reflects current status.
+
+When you add tests:
+
+- Put them in `tests/` (mirror the source layout — `test_<module>.py`)
+- Use pytest fixtures from `conftest.py` instead of rolling your own
+  monkey-patching: `tmp_tiramisu_home`, `tmp_workspace`, `mock_invoke`,
+  `clear_steering_cache`. The fixtures handle the import-time capture
+  gotchas (see the docstrings).
+- Never call the real Anthropic API. `mock_invoke` patches every
+  consumer module's local `invoke` reference (not just `llm.invoke`),
+  because `from llm import invoke` captures the function at import time.
+- Read [INVARIANTS.md](INVARIANTS.md) before adding tests on the
+  dangerous tool surfaces (`chat.py`, `implement.py`) — the rules
+  there are not negotiable and the existing tests show the patterns.
+
+When you change `learnings.db` schema:
+
+- **Append a migration to `MIGRATIONS` in `scripts/memory.py`.** Never
+  edit an existing migration — users with old DBs have already applied
+  the original version.
+- Add a test in `tests/test_memory.py` that asserts the new column /
+  index actually exists after migration.
+- See [INVARIANTS.md §7](INVARIANTS.md#7-schema-discipline) for the
+  full ruleset.
 
 ## Commit hygiene
 

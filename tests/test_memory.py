@@ -71,6 +71,159 @@ def test_preferences_table_has_active_column(tmp_tiramisu_home):
 
 
 # --------------------------------------------------------------------------
+# Schema versioning -- migrations are recorded, idempotent, contiguous
+# --------------------------------------------------------------------------
+
+def test_schema_migrations_table_exists(tmp_tiramisu_home):
+    """The schema_migrations table is the ledger of what's been applied.
+    Without it the framework can't decide whether to run a migration."""
+    import memory
+    with memory._connection() as conn:
+        cols = conn.execute(
+            "PRAGMA table_info(schema_migrations)"
+        ).fetchall()
+    col_names = {c[1] for c in cols}
+    assert col_names >= {"version", "description", "applied_at"}
+
+
+def test_fresh_db_records_baseline_migration(tmp_tiramisu_home):
+    """A brand-new DB should have v1 (baseline) marked as applied."""
+    import memory
+    with memory._connection() as conn:
+        versions = {row[0] for row in conn.execute(
+            "SELECT version FROM schema_migrations"
+        ).fetchall()}
+    assert 1 in versions, (
+        "baseline schema (v1) should be recorded on a fresh DB"
+    )
+
+
+def test_fresh_db_applies_all_migrations(tmp_tiramisu_home):
+    """Every version in MIGRATIONS plus v1 baseline must be in the
+    schema_migrations table after a fresh init."""
+    import memory
+    expected = {1} | {m[0] for m in memory.MIGRATIONS}
+    with memory._connection() as conn:
+        actual = {row[0] for row in conn.execute(
+            "SELECT version FROM schema_migrations"
+        ).fetchall()}
+    missing = expected - actual
+    assert not missing, f"migrations not applied to fresh DB: {missing}"
+
+
+def test_migration_v2_added_has_blockers_column(tmp_tiramisu_home):
+    """v2 must add commit_drafts.has_blockers. If this column goes missing
+    `t reflect`'s blocker-override analysis will silently report zero."""
+    import memory
+    with memory._connection() as conn:
+        cols = conn.execute("PRAGMA table_info(commit_drafts)").fetchall()
+    col_names = {c[1] for c in cols}
+    assert "has_blockers" in col_names, (
+        "v2 migration should have added has_blockers to commit_drafts"
+    )
+
+
+def test_migrations_are_idempotent(tmp_tiramisu_home):
+    """Connecting twice in a row must not re-apply migrations or duplicate
+    rows in schema_migrations."""
+    import memory
+    # First connect applies migrations
+    with memory._connection() as conn:
+        first = conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+    # Second connect should be a no-op
+    with memory._connection() as conn:
+        second = conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+    assert first == second, (
+        f"migrations applied twice: before={first}, after={second}"
+    )
+
+
+def test_migrations_versions_are_contiguous(tmp_tiramisu_home):
+    """No gaps allowed. If MIGRATIONS jumps from v2 to v4, someone deleted
+    v3 -- which is the cardinal rule violation (never edit/delete an
+    applied migration). Add a new migration instead."""
+    import memory
+    versions = [m[0] for m in memory.MIGRATIONS]
+    if not versions:
+        return  # nothing to check; future-proof
+    versions_sorted = sorted(versions)
+    expected = list(range(versions_sorted[0], versions_sorted[-1] + 1))
+    assert versions_sorted == expected, (
+        f"MIGRATIONS has gaps in version numbers: {versions_sorted}; "
+        f"expected contiguous {expected}"
+    )
+    # Lowest migration version must be >= 2 (v1 is the baseline)
+    assert versions_sorted[0] >= 2, (
+        f"MIGRATIONS list should start at v2 or higher; v1 is the baseline. "
+        f"Got {versions_sorted}"
+    )
+
+
+def test_legacy_db_without_version_table_gets_baselined(
+    tmp_tiramisu_home, monkeypatch
+):
+    """Simulate upgrading from a pre-versioning install: an existing
+    learnings.db that has the baseline schema but no schema_migrations
+    table. The framework must NOT re-apply v1 (which would be safe but
+    wasteful); it must mark v1 as already applied and then run v2+."""
+    import memory
+    import sqlite3
+
+    # Create a DB that looks like a pre-versioning install: baseline schema
+    # only, NO schema_migrations table.
+    db = tmp_tiramisu_home / "learnings.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript(memory.SCHEMA)
+    # Add a row in preferences so we can prove no data was lost
+    conn.execute(
+        "INSERT INTO preferences (text, category) VALUES (?, ?)",
+        ("legacy preference", "test"),
+    )
+    conn.commit()
+    conn.close()
+
+    # Now connect via the migration-aware path
+    with memory._connection() as conn:
+        versions = {row[0] for row in conn.execute(
+            "SELECT version FROM schema_migrations"
+        ).fetchall()}
+        prefs = conn.execute(
+            "SELECT text FROM preferences"
+        ).fetchall()
+        cols = {c[1] for c in conn.execute(
+            "PRAGMA table_info(commit_drafts)"
+        ).fetchall()}
+
+    assert 1 in versions, "legacy DB must be baseline-marked at v1"
+    assert 2 in versions, "v2 migration must run on legacy DB"
+    assert ("legacy preference",) in prefs, (
+        "legacy data was wiped during migration -- this is a data-loss bug"
+    )
+    assert "has_blockers" in cols, (
+        "v2 column should exist after migrating legacy DB"
+    )
+
+
+def test_log_commit_draft_works_after_v2_migration(tmp_tiramisu_home):
+    """End-to-end: log_commit_draft still inserts cleanly after the new
+    column is added (should be tolerant of the DEFAULT on has_blockers)."""
+    import memory
+    memory.log_commit_draft("/repo", ["a.py"], "draft message")
+    with memory._connection() as conn:
+        row = conn.execute(
+            "SELECT draft, has_blockers FROM commit_drafts "
+            "ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+    assert row[0] == "draft message"
+    # has_blockers default is 0; insert didn't specify a value
+    assert row[1] == 0
+
+
+# --------------------------------------------------------------------------
 # Preferences: add / list / deactivate round-trip
 # --------------------------------------------------------------------------
 
