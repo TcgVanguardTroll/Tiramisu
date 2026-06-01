@@ -1,8 +1,10 @@
 # Tiramisu 🍰
 
+[![tests](https://github.com/TcgVanguardTroll/Tiramisu/actions/workflows/test.yml/badge.svg)](https://github.com/TcgVanguardTroll/Tiramisu/actions/workflows/test.yml)
+
 A personal multi-agent dev system. A crew of pastry-named pets that scope your work, write code, review changes, draft commit messages, and learn your preferences over time. Runs as a CLI, integrates with git via hooks. No IDE plugin required.
 
-MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims.
+MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 83-test suite across 6 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 6-layer steering composition, the memory layer, and the source-config loader. Runs in ~8s with no API calls (Anthropic client is mocked).
 
 ## The Crew
 
@@ -193,6 +195,7 @@ tiramisu
 | **Autonomous research** — anchors + GitHub/HN/arxiv discovery + local-library ingest + PDF auto-split + library scout | [docs/RESEARCH.md](docs/RESEARCH.md) |
 | **Terminal UI** — `TIRAMISU_RENDER` modes + animal-themed spinners + REPL keys | [docs/UI.md](docs/UI.md) |
 | **Contributing / writing agents** — invariants, persona template, recipes | [docs/DEVELOPING.md](docs/DEVELOPING.md) and [CLAUDE.md](CLAUDE.md) |
+| **Running tests** — `pip install -r requirements-dev.txt && pytest tests/` (no API key needed; everything is mocked) | [tests/](tests/) |
 
 ---
 

@@ -1,0 +1,68 @@
+name: tests
+
+# Run the test suite across the matrix on every push / PR.
+# The suite is fully mocked (see tests/conftest.py mock_invoke fixture) so
+# no real Anthropic API calls happen and no API key is required.
+#
+# Matrix shape: 3 OS x 2 Python = 6 cells.
+# 83 tests; full run takes ~10s per cell so the whole matrix is ~60s of compute.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:   # allow manual runs from the Actions tab
+
+# Cancel in-flight runs on the same ref if a new push lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Don't kill the whole matrix on one failure -- we want to see which
+      # OS/Python combination broke.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          # pip caching by hash of the requirements files -- saves ~15s/cell
+          # after the first warm-up.
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        # Top-level runtime deps + test deps. anthropic/pypdf are listed in
+        # requirements.txt but the test suite mocks llm.invoke and lazy-loads
+        # pypdf, so neither makes real calls during the test run.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Show Python + pytest versions (debugging matrix issues)
+        run: |
+          python --version
+          python -m pytest --version
+
+      - name: Run pytest
+        # -W error::DeprecationWarning promotes deprecation warnings to test
+        # failures. This is the same flag we used to catch the datetime.utcnow()
+        # bug in Phase 2 -- keeps the codebase honest about deprecations.
+        run: |
+          python -m pytest tests/ -v --tb=short -W error::DeprecationWarning
