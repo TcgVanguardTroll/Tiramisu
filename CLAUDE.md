@@ -94,6 +94,10 @@ tiramisu/
 │   ├── llm.py                    Anthropic API client + token tracking
 │   ├── gitutil.py                Cross-platform git resolution
 │   └── spinners.py               Themed wait indicators
+├── docs/                         Deep-dive docs for advanced features
+│   ├── RESEARCH.md               Cannoli's research subsystem
+│   ├── UI.md                     Render modes, spinners, REPL keys
+│   └── DEVELOPING.md             Pointer for contributors / AI agents working on this repo
 ├── code-style.md                 Per-language style rules (Java/Python/Rust/TS)
 ├── engineering-principles.md     Universal design rules (Bloch/Martin/Ousterhout/etc.)
 ├── communication-style.md        Tone, commit format, PR template

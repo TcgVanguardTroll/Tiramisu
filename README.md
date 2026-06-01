@@ -2,28 +2,26 @@
 
 A personal multi-agent dev system. A crew of pastry-named pets that scope your work, write code, review changes, draft commit messages, and learn your preferences over time. Runs as a CLI, integrates with git via hooks. No IDE plugin required.
 
+MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims.
+
 ## The Crew
 
-Every agent is named after a pastry that matches their fur.
-
-All dogs share 🐶, all cats share 🐱. Each agent's pastry is unique — that's the visual differentiator. Source of truth: `scripts/personas.py`.
+Every agent is named after a pastry that matches their fur. All dogs share 🐶, all cats share 🐱. Each agent's pastry is unique — that's the visual differentiator. Source of truth: `scripts/personas.py`.
 
 | Agent | Sigil | Pet | Role |
 |-------|:-----:|-----|------|
 | **Tiramisu** | 🐶🍮 | Red tri mini American Shepherd | Orchestrator — herds the rest |
-| **Éclair** | 🦡🍫 | Sleek black ferret (mustelid kin: badger) | SDE — writes code with full codebase access |
+| **Éclair** | 🦡🍫 | Sleek black ferret | SDE — writes code with full codebase access |
 | **Cookie** | 🐱🍪 | Tortoiseshell cat | Reviewer — judgmental, zero tolerance for sloppiness |
 | **Croissant** | 🐶🥐 | Corgi | PM — scopes tasks, defines acceptance criteria |
 | **Madeleine** | 🐱🧁 | Ginger tabby | Knowledge keeper — surfaces patterns from accumulated data |
-| **Cannoli** | 🐶🍩 | Beagle | Research (planned) |
-| **Mochi** | 🐰🍡 | White lop rabbit | Brainstorm (planned) |
-| **Brioche** | 🐶🍞 | Golden retriever | HR — onboards new agents (planned) |
+| **Cannoli** | 🐶🍩 | Beagle | Researcher — scans external sources, ingests your library |
+| **Mochi** | 🐰🍡 | White lop rabbit | Brainstorm *(planned)* |
+| **Brioche** | 🐶🍞 | Golden retriever | HR — onboards new agents *(planned)* |
 
 ---
 
 ## Two entry points: `tiramisu` and `t`
-
-Tiramisu has two CLI surfaces. Use whichever fits the moment.
 
 ### `tiramisu` — natural language entry / REPL
 
@@ -58,7 +56,7 @@ tiramisu » implement the dark mode toggle
 tiramisu » exit
 ```
 
-REPL built-ins: `help`, `exit` / `quit` / `q`, `clear`. Ctrl+C kills a running subcommand but keeps the REPL alive. Ctrl+D exits the REPL.
+REPL details (history, tab-completion, multi-line, keys) are in [docs/UI.md](docs/UI.md).
 
 ### `t <command>` — direct invocation
 
@@ -77,16 +75,16 @@ If you already know which agent you want, skip the router:
 | `t learn "text"` | Teach the agents a preference (e.g. `t learn "prefer guard clauses"`) |
 | `t learn list` | Show all active preferences |
 | `t reflect [days]` | Madeleine's self-improvement report from accumulated data |
-| `t research` | Show Cannoli's latest external-source findings (auto-runs weekly) |
+| `t research [...]` | Cannoli's external research — see [docs/RESEARCH.md](docs/RESEARCH.md) |
 | `t help` | Print the command list |
 
 `t` skips the ~200ms LLM router step. `tiramisu` is friendlier.
 
 ---
 
-## What happens automatically
+## What happens automatically at every `git commit`
 
-After `t hook` in a repo, every `git commit` triggers:
+After `t hook` in a repo, every commit triggers:
 
 1. 🦡🍫 **Éclair drafts the commit message** from your staged diff, using your last 5 commits as few-shot examples so the voice matches yours.
 2. 🐱🍪 **Cookie reviews** the diff plus the full content of each changed file. She has your engineering principles, code style for the relevant languages, and your learned preferences in her system prompt. She halts on `[BLOCKER]` and prompts to override.
@@ -105,6 +103,7 @@ Every meaningful interaction lands in `~/.tiramisu/learnings.db`:
 - **Override snippets** — what Cookie flagged that you dismissed (so she calibrates)
 - **Preferences** — anything you taught via `t learn`
 - **Task plans** — saved Croissant scope sessions
+- **Token usage** — every API call, for `t reflect` cost analysis
 
 This data feeds back into every agent's system prompt automatically. After a few weeks:
 
@@ -113,147 +112,6 @@ This data feeds back into every agent's system prompt automatically. After a few
 - `t reflect` proposes concrete agent-prompt edits grounded in real data, not theory
 
 ---
-
-## Autonomous external research
-
-Tiramisu watches the world for you. Every time you run `tiramisu`, **Cannoli** checks whether her last scan of external sources was more than 7 days ago. If it was, she spawns a detached background process that:
-
-1. Fetches Anthropic API release notes, the Anthropic Cookbook, aider docs, and Python release notes
-2. Diffs each source against the last cached copy (only **new** content is summarized — no full re-summaries)
-3. Asks Haiku to produce a markdown findings file with proposed steering edits ranked 1–5 for relevance
-4. Writes the file to `~/.tiramisu/.research/findings_YYYY-MM-DD.md`
-
-Next time you run `tiramisu`, you see a one-line notice:
-
-```
-🐶 Cannoli has 1 new finding(s). Run `t research` to see them, or `t research mute` to skip.
-```
-
-Run `t research` to view the findings (rendered as Markdown), which marks them as read. Or `t research mute` to ignore this week.
-
-**Critical safety property:** Findings are *proposed*, never auto-applied. The user copies any worthwhile suggestions into the steering files by hand. This is the autonomous version of the "learn before mutate" rule in `CLAUDE.md` §4.3.
-
-| `t research` action | What it does |
-|---|---|
-| `t research` (no args) | Show + mark-read the newest unread file (findings or candidates) |
-| `t research run` | Scan watched sources now for new deltas |
-| `t research discover` | Scout GitHub Trending + HackerNews for new candidate sources |
-| `t research ingest <path>` | Manually ingest a PDF / `.md` / `.txt` / `.rst` file or directory |
-| `t research grab <arxiv-id>` | Download an arxiv paper into your library (auto-ingests on next run) |
-| `t research grab --all` | Download every arxiv paper from the latest candidates file |
-| `t research library` | List files in your library + ingestion status |
-| `t research all` | Run + discover + ingest-library in one shot |
-| `t research mute` | Mark everything pending as read without showing |
-| `t research list` | Chronological history of findings + candidates |
-| `t research sources list` | Show active sources for this directory |
-| `t research sources add <url> [name] [focus]` | Add a source to your user config |
-| `t research sources remove <name-or-url>` | Drop a source |
-| `t research sources reset` | Write defaults to `~/.tiramisu/sources.json` to edit |
-| `t research sources show` | Dump the raw JSON config |
-
-### Source configuration — three layers
-
-The active source list follows the same per-user / per-repo pattern as everything else:
-
-| Layer | File | Behavior |
-|---|---|---|
-| **Defaults** | hardcoded in `scripts/research.py` | Always available; used if no user file exists |
-| **User** | `~/.tiramisu/sources.json` | **Replaces** defaults if present |
-| **Per-repo** | `<repo>/.tiramisu/sources.json` | **Adds** to whichever base is active |
-
-Example user file:
-
-```json
-[
-  {
-    "name": "Anthropic API release notes",
-    "url": "https://docs.anthropic.com/en/release-notes/api",
-    "focus": "Models, pricing, new SDK features"
-  },
-  {
-    "name": "My team's design-doc repo",
-    "url": "https://raw.githubusercontent.com/my-org/design-docs/main/README.md",
-    "focus": "New patterns we should know about"
-  }
-]
-```
-
-You can add per-project sources too — e.g., put a `sources.json` in a project's `.tiramisu/` directory pointing at that project's docs, and Cannoli will watch those whenever you run `tiramisu` from inside that repo.
-
-### Three layers — anchors + discovery + library
-
-Cannoli watches the world (and your library) in three ways:
-
-| Layer | What it does | Output | Cost / week |
-|---|---|---|---|
-| **Anchors** (watched sources) | Diffs the sources you've curated in `sources.json` | `findings_YYYY-MM-DD.md` | ~$0.04 |
-| **Discovery** (scouting) | Pulls trending repos from GitHub topics (`claude`, `ai-agents`, `anthropic`), top HackerNews stories matching `claude anthropic` / `ai code review` / `ai dev tools`, and the latest arxiv papers matching `abs:prompt+engineering+AND+abs:agent` etc. Each becomes a *candidate*. | `candidates_YYYY-MM-DD.md` | ~$0.13 |
-| **Library** (local docs / PDFs / books) | Reads files you've dropped into `~/.tiramisu/library/` or `<repo>/.tiramisu/library/`. Native PDF support via Anthropic's document blocks. Hash-cached so only **changed files** are re-processed. | `findings_library_YYYY-MM-DD.md` | depends on what's added — ~$0.10–$0.50 per new book one-time |
-
-Both run automatically when you next launch `tiramisu` after >7 days — the dispatcher kicks off `t research all` as a detached background process. The pending notice combines both:
-
-```
-🐶 Cannoli has 2 new finding(s) and 3 candidate(s) waiting.
-   Run `t research` to see them.
-```
-
-Discovery uses **only free public APIs** (GitHub Search API + HN Algolia API). No API keys, no rate-limit headaches at this scale. Total weekly cost: **~$0.14**.
-
-### Library: PDFs / books / docs you drop in
-
-Two directories Cannoli reads automatically on the weekly background run:
-
-```
-~/.tiramisu/library/           ← books, papers, internal docs you want every agent to learn from
-<repo>/.tiramisu/library/      ← project-specific docs only this repo should consider
-```
-
-Supported file types: **.pdf** (sent as native document blocks to Claude — text, tables, figures all readable), **.md / .markdown / .txt / .rst** (read as text).
-
-A hash cache (`~/.tiramisu/.research/library_hashes.json`) tracks each file's SHA-256. **Unchanged files are skipped** on subsequent runs — Cannoli only re-reads what's new or edited. Adding a 500-page PDF once costs ~$0.30 of Sonnet input; after that, it's free until you edit it.
-
-**No size cap.** PDFs over ~80 pages or ~25 MB are auto-split into chunks via `pypdf` and each chunk is ingested separately, with findings aggregated. A 500-page technical book becomes ~7 API calls, ~$1 one-time. The hash cache then prevents re-ingestion until you edit the file.
-
-Output goes to `findings_library_YYYY-MM-DD.md` with proposed steering edits (file path + section + exact text to paste). Same "propose, don't apply" rule as everything else.
-
-Manual one-shot:
-```powershell
-t research ingest "C:\path\to\effective-python.pdf"
-t research ingest "C:\path\to\design-docs-folder"
-t research library              # see what's in your library
-```
-
-### arxiv papers — discover + grab
-
-The discovery layer also searches arxiv with these default queries (configurable via `~/.tiramisu/arxiv_queries.json`):
-
-```
-abs:prompt+engineering+AND+abs:agent
-abs:LLM+AND+abs:code+review
-abs:tool+use+AND+abs:language+model
-```
-
-Cannoli ranks each result 1–5 for relevance based on the abstract, never downloading the PDF during discovery (that would balloon costs). Each candidate carries an exact paste-able download command:
-
-```markdown
-### Some Paper Title
-**Relevance:** 4/5
-**arxiv ID:** 2401.12345
-**Why:** Argues for X-pattern in tool-use loops; would update agents/eclair.md.
-**Grab command:** `t research grab 2401.12345`
-```
-
-Run `t research grab 2401.12345` to pull just that one. Or `t research grab --all` to download every arxiv candidate from the latest candidates file in one shot. Papers land in `~/.tiramisu/library/arxiv/` and are auto-ingested (with chunked PDF splitting if needed) on the next `t research all` or weekly background run.
-
-### Going from a candidate to a watched source
-
-When a candidate looks promising, copy the `Add command` from the candidates file:
-
-```
-**Add command:** `t research sources add https://example.com "Some Repo" "Why it matters"`
-```
-
-That graduates it from a one-off candidate to a permanently-watched anchor source — and you'll see deltas in `findings_*.md` going forward.
 
 ## Steering composition
 
@@ -287,7 +145,7 @@ Examples of what to put there:
 - "All async functions take a `trace_id: str` as the first arg."
 - "Skip docstring lints in `legacy/` — that code is deprecated."
 
-The agents will know these rules apply only in that project. Add Tiramisu's `.tiramisu/.repl_history` and similar to your `.gitignore` if you don't want them committed (only `.md` files in `.tiramisu/` are loaded as steering).
+The agents will know these rules apply only in that project.
 
 ---
 
@@ -301,100 +159,55 @@ The agents will know these rules apply only in that project. Add Tiramisu's `.ti
 
 ### Install — 2 commands either platform
 
-#### Windows
+**Windows:**
 
 ```powershell
 git clone https://github.com/TcgVanguardTroll/tiramisu.git C:\tiramisu
 C:\tiramisu\setup.ps1
 ```
 
-#### macOS / Linux
+**macOS / Linux:**
 
 ```bash
 git clone https://github.com/TcgVanguardTroll/tiramisu.git ~/.local/share/tiramisu
 ~/.local/share/tiramisu/setup.sh
 ```
 
-The setup script:
-1. Finds Python 3.10+
-2. Installs all deps (`anthropic`, `rich`, `prompt_toolkit`)
-3. Adds the install dir to your user PATH
-4. Creates `~/.tiramisu/.env` with a key placeholder
+The setup script finds Python 3.10+, installs deps (`anthropic`, `rich`, `prompt_toolkit`, `pypdf`), adds the install dir to PATH, and creates `~/.tiramisu/.env` with a key placeholder. Idempotent — safe to re-run after `git pull` to refresh dependencies.
 
-It's idempotent — safe to re-run after `git pull` to refresh dependencies.
+After it finishes, you'll be told if you need to open a fresh terminal (PATH refresh) or add your `ANTHROPIC_API_KEY` to `~/.tiramisu/.env`. Then verify:
 
-After the script finishes, you'll be told if you need to:
-- Open a fresh terminal (so PATH picks up)
-- Add your `ANTHROPIC_API_KEY` to `~/.tiramisu/.env`
-
-Then verify:
 ```
 t help
 tiramisu
 ```
 
-> **Line-ending note**: `.gitattributes` pins `.bat` files to CRLF (otherwise `cmd.exe` mis-parses them) and the POSIX shims (`t`, `tiramisu`, `*.sh`) to LF (otherwise `/bin/sh` fails on `^M`). This is automatic on `git clone` — you don't need to think about it.
+> **Line-ending note**: `.gitattributes` pins `.bat` files to CRLF (otherwise `cmd.exe` mis-parses them) and the POSIX shims (`t`, `tiramisu`, `*.sh`) to LF (otherwise `/bin/sh` fails on `^M`). Handled automatically on `git clone`.
 
 ---
 
-## Output rendering modes
+## Advanced features (deep dives in `docs/`)
 
-Cookie's reviews, Croissant's plans, and Madeleine's reports can render in three ways via the `TIRAMISU_RENDER` env var:
-
-| `TIRAMISU_RENDER` | Behavior |
+| Topic | Where |
 |---|---|
-| `both` *(default)* | Stream raw text live, then print a rendered Markdown view below a divider. Two-phase: best of both — real-time feedback plus a polished final view. |
-| `stream` | Stream raw text only. No rendered view. Cleanest for piping output to files or grepping. |
-| `rendered` | Silent buffer with a thinking-spinner during the API call, then print the rendered Markdown only. No raw text shown. |
+| **Autonomous research** — anchors + GitHub/HN/arxiv discovery + local-library ingest + PDF auto-split + library scout | [docs/RESEARCH.md](docs/RESEARCH.md) |
+| **Terminal UI** — `TIRAMISU_RENDER` modes + animal-themed spinners + REPL keys | [docs/UI.md](docs/UI.md) |
+| **Contributing / writing agents** — invariants, persona template, recipes | [docs/DEVELOPING.md](docs/DEVELOPING.md) and [CLAUDE.md](CLAUDE.md) |
 
-Set per session:
-```powershell
-$env:TIRAMISU_RENDER = "rendered"
-t scan
-```
-
-Or permanently in your PowerShell profile:
-```powershell
-# add to $PROFILE
-$env:TIRAMISU_RENDER = "rendered"
-```
-
-POSIX:
-```bash
-# add to ~/.bashrc or ~/.zshrc
-export TIRAMISU_RENDER=rendered
-```
-
-`TIRAMISU_NO_RENDER=1` is kept as a deprecated alias for `stream`.
-
-### Spinner themes
-
-The "thinking…" indicator (visible during router decisions and in `rendered` mode) has a few animal-themed variants. Set via `TIRAMISU_SPINNER`:
-
-| Value | Looks like |
-|---|---|
-| `paws` *(default)* | 🐾 walking paw prints with a fading trail |
-| `chase` | 🐶 puppy running across the line |
-| `pastries` | 🍮 🥐 🍪 🧁 🍩 🍡 🍞 🍫 rotating |
-| `naptime` | 🐱 cat sleeping, zzz building |
-| `sniff` | 🐶 puppy sniffing left-to-right and back |
-| any rich built-in | `dots`, `dots2`, `line`, `arrow`, etc. — passes through |
-
-```powershell
-$env:TIRAMISU_SPINNER = "pastries"
-tiramisu look at my code
-```
-
-Set permanently the same way as `TIRAMISU_RENDER` above.
+---
 
 ## Per-user data
 
 | Path | What lives there |
 |------|------------------|
 | `~/.tiramisu/.env` | API key |
-| `~/.tiramisu/learnings.db` | Reviews, drafts, preferences, overrides |
+| `~/.tiramisu/learnings.db` | Reviews, drafts, preferences, overrides, token usage |
+| `~/.tiramisu/.research/` | Findings, candidates, scout reports |
+| `~/.tiramisu/library/` | Books / PDFs / docs Cannoli ingests on the weekly background run |
+| `~/.tiramisu/sources.json` | Custom watched-source list (overrides defaults) |
 | `<repo>/shared_workspace/tasks/` | Croissant's saved scope plans (per-repo) |
 | `<repo>/.git/hooks/` | Cookie + Éclair hooks (created by `t hook`) |
+| `<repo>/.tiramisu/*.md` | Per-project steering overrides |
 
 ---
 
@@ -424,6 +237,7 @@ Weekly:
 ```bash
 t reflect          # see patterns; get specific preference + prompt-edit proposals
 t learn "..."      # teach a new preference based on what you noticed
+t research         # see what Cannoli scouted from the world this week
 ```
 
 ---
@@ -435,33 +249,38 @@ tiramisu/
 ├── agents/                  # Persona files for each crew member
 ├── hooks/                   # cookie_review.py, eclair_commit_msg.py, eclair_post_commit.py
 ├── scripts/                 # CLI implementations + shared utilities
-│   ├── dispatch.py          # tiramisu — natural-language router + REPL
-│   ├── implement.py         # t implement -- agentic code writer with tool use
-│   ├── scan.py              # t scan -- Cookie reads files/dirs in full
-│   ├── pr_review.py         # t pr -- branch review, --post creates inline PR comments
-│   ├── start_task.py        # t task -- Croissant scope session
-│   ├── reflect.py           # t reflect -- Madeleine's insights
-│   ├── learn.py             # t learn -- preference management
-│   ├── install_hooks.py     # t hook
-│   ├── memory.py            # learnings.db layer (read/write helpers)
-│   ├── steering.py          # composes persona + engineering + code-style + preferences
+│   ├── dispatch.py          # `tiramisu` -- natural-language router + REPL
+│   ├── implement.py         # `t implement` -- agentic code writer with tool use
+│   ├── chat.py              # `t chat` -- conversational mode with read+write+shell
+│   ├── scan.py              # `t scan` -- Cookie reads files/dirs in full
+│   ├── pr_review.py         # `t pr` -- branch review, --post creates inline PR comments
+│   ├── start_task.py        # `t task` -- Croissant scope session
+│   ├── reflect.py           # `t reflect` -- Madeleine's insights
+│   ├── research.py          # `t research` -- Cannoli's autonomous research
+│   ├── learn.py             # `t learn` -- preference management
+│   ├── install_hooks.py     # `t hook`
+│   ├── memory.py            # learnings.db layer
+│   ├── steering.py          # composition: persona + engineering + code-style + preferences
+│   ├── personas.py          # agent emoji + colors
+│   ├── spinners.py          # custom rich spinner registrations
+│   ├── gitutil.py           # cross-platform git resolution
 │   └── llm.py               # Anthropic API client with prompt caching
-├── code-style.md            # Per-language style: Java, Python, Rust, TypeScript
+├── docs/                    # Deep dives for advanced features
+│   ├── RESEARCH.md          # Autonomous research subsystem
+│   ├── UI.md                # Render modes + spinners + REPL keys
+│   └── DEVELOPING.md        # Contributor / agent-developer pointer
+├── code-style.md            # Per-language style (Java / Python / Rust / TypeScript)
 ├── engineering-principles.md# Distilled from Bloch / Martin / Ousterhout / Kleppmann / Nygard
 ├── communication-style.md   # Tone, commit format, PR description template
-├── t.bat                    # Windows dispatcher for `t <cmd>`
-├── tiramisu.bat             # Windows dispatcher for `tiramisu` (REPL + router)
-├── t                        # POSIX dispatcher for `t <cmd>`
-├── tiramisu                 # POSIX dispatcher for `tiramisu` (REPL + router)
-├── requirements.txt         # anthropic, etc.
+├── CLAUDE.md                # Load-bearing architectural invariants for AI agents
+├── t.bat / t                # CLI dispatcher (Windows / POSIX)
+├── tiramisu.bat / tiramisu  # REPL dispatcher (Windows / POSIX)
+├── setup.ps1 / setup.sh     # One-command install (Windows / POSIX)
+├── requirements.txt         # anthropic, rich, prompt_toolkit, pypdf
 └── .gitattributes           # Pins .bat to CRLF, POSIX shims to LF
 ```
 
 ---
-
-## License
-
-MIT — see [LICENSE](LICENSE). Use it, fork it, sell it, ignore it. No warranty.
 
 ## Design principles
 
@@ -469,5 +288,11 @@ MIT — see [LICENSE](LICENSE). Use it, fork it, sell it, ignore it. No warranty
 - **Cross-platform** — Windows uses `.bat` dispatchers, macOS/Linux uses extension-less POSIX shell scripts. Both call the same Python.
 - **Local-first** — your data, your preferences, your `learnings.db`. No cloud sync.
 - **Composable steering** — agents share the same source of truth (your codified standards) so they agree on what "good" means.
-- **Learn before mutate** — `t reflect` *proposes* changes; you decide whether to apply. Agents don't silently rewrite their own prompts.
+- **Learn before mutate** — `t reflect` and Cannoli's research *propose* changes; you decide whether to apply. Agents don't silently rewrite their own prompts.
 - **Surgical** — every change traces to a request. No "while I'm here" cleanup.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, sell it, ignore it. No warranty.
