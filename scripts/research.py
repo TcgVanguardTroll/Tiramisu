@@ -298,7 +298,7 @@ WHAT TO LOOK FOR: {focus}
 
 Tiramisu context (so you know what's already covered):
   - Anthropic SDK, Python 3.10+
-  - DEFAULT_MODEL = claude-sonnet-4-5, FAST_MODEL = claude-haiku-4-5
+  - DEFAULT_MODEL = claude-sonnet-4-6, FAST_MODEL = claude-haiku-4-5
   - Prompt caching, tool use, streaming already in use
   - Steering docs: engineering-principles.md, code-style.md, communication-style.md
   - Per-language code style for Python/Java/Rust/TS
