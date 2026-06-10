@@ -30,7 +30,7 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from llm import _client, DEFAULT_MODEL
+from llm import _client, DEFAULT_MODEL, _log_api_usage
 from steering import load_steering
 from personas import pair as persona_pair, pet as persona_pet
 
@@ -402,12 +402,19 @@ def chat_turn(messages, system, client):
       - if Claude calls tools, execute them and recurse
       - returns when Claude produces text without tool calls
     """
+    # Cache the composed system prompt (same pattern as llm.py). The tool
+    # loop re-sends tools + system on every round trip, so the breakpoint
+    # turns each iteration after the first into a cheap cache read.
+    system_blocks = [
+        {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+    ]
+
     for depth in range(MAX_TOOL_DEPTH):
         try:
             with client.messages.stream(
                 model=DEFAULT_MODEL,
                 max_tokens=4096,
-                system=system,
+                system=system_blocks,
                 tools=TOOLS,
                 messages=messages,
             ) as stream:
@@ -420,6 +427,7 @@ def chat_turn(messages, system, client):
                 if not first_text:
                     console.print()  # newline after streamed text
                 final = stream.get_final_message()
+            _log_api_usage(final.usage, DEFAULT_MODEL)
         except KeyboardInterrupt:
             console.print("\n[yellow][interrupted][/yellow]")
             return

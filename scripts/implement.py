@@ -36,7 +36,7 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from llm import _client, DEFAULT_MODEL
+from llm import _client, DEFAULT_MODEL, _log_api_usage
 from steering import load_steering
 import memory
 
@@ -436,6 +436,14 @@ def run_agent(initial_messages, system, state: AgentState, max_iterations=50):
     client = _client()
     messages = list(initial_messages)
 
+    # Cache the composed system prompt (same pattern as llm.py). Every
+    # iteration re-sends tools + system, so the breakpoint makes each
+    # iteration after the first a cheap cache read instead of a full-price
+    # re-process of the whole steering doc.
+    system_blocks = [
+        {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+    ]
+
     for iteration in range(1, max_iterations + 1):
         print(f"\n{'-' * 60}")
         print(f"  Iteration {iteration}")
@@ -444,7 +452,7 @@ def run_agent(initial_messages, system, state: AgentState, max_iterations=50):
         with client.messages.stream(
             model=DEFAULT_MODEL,
             max_tokens=4096,
-            system=system,
+            system=system_blocks,
             tools=TOOLS,
             messages=messages,
         ) as stream:
@@ -452,6 +460,7 @@ def run_agent(initial_messages, system, state: AgentState, max_iterations=50):
                 print(text, end="", flush=True)
             print()
             final = stream.get_final_message()
+        _log_api_usage(final.usage, DEFAULT_MODEL)
 
         # Collect tool calls
         tool_uses = [b for b in final.content if b.type == "tool_use"]
