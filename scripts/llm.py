@@ -116,6 +116,7 @@ def invoke(
     kwargs = dict(
         model=model,
         max_tokens=max_tokens,
+        temperature=temperature,
         messages=[{"role": "user", "content": prompt}],
     )
     if system:
