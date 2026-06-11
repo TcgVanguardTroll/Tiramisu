@@ -166,6 +166,42 @@ def test_router_multiword_input_still_uses_llm(mock_invoke):
 
 
 # --------------------------------------------------------------------------
+# _extract_path_arg(): forwarding real paths to `t scan`
+# --------------------------------------------------------------------------
+
+def test_extract_path_finds_existing_file(tmp_workspace):
+    from dispatch import _extract_path_arg
+    (tmp_workspace / "llm.py").write_text("x")
+    assert _extract_path_arg("scan llm.py for issues") == "llm.py"
+
+
+def test_extract_path_finds_existing_directory(tmp_workspace):
+    from dispatch import _extract_path_arg
+    (tmp_workspace / "scripts").mkdir()
+    assert _extract_path_arg("look over scripts please") == "scripts"
+
+
+def test_extract_path_ignores_natural_language(tmp_workspace):
+    """Pure natural language has no real path -- nothing must be forwarded,
+    or `t scan` would error on a bogus argument."""
+    from dispatch import _extract_path_arg
+    assert _extract_path_arg("is my code clean") is None
+
+
+def test_extract_path_strips_quotes(tmp_workspace):
+    from dispatch import _extract_path_arg
+    (tmp_workspace / "main.py").write_text("x")
+    assert _extract_path_arg("scan 'main.py'") == "main.py"
+
+
+def test_extract_path_skips_dot(tmp_workspace):
+    """'.' always exists; forwarding it is pointless (scan defaults to cwd)
+    and risks matching sentence-ending periods."""
+    from dispatch import _extract_path_arg
+    assert _extract_path_arg("scan . now") is None
+
+
+# --------------------------------------------------------------------------
 # route(): never crashes
 # --------------------------------------------------------------------------
 

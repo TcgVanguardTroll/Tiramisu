@@ -135,6 +135,24 @@ def route(user_input: str) -> str:
     return cmd
 
 
+def _extract_path_arg(user_input: str) -> str | None:
+    """Find a real filesystem path mentioned in the input.
+
+    The router's input is natural language, so it can't be passed to
+    `t scan` verbatim -- "is my code clean" is not a path. But "scan
+    scripts/llm.py" mentions one, and dropping it silently scans the whole
+    cwd instead. Only a token that actually exists on disk is safe to
+    forward; everything else stays natural language. First match wins.
+    """
+    for token in user_input.split():
+        candidate = token.strip("\"'`,;:!?")
+        if not candidate or candidate in (".", ".."):
+            continue
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
 def run_subcommand(cmd: str, user_input: str) -> int:
     """Exec t.bat <cmd> [user_input]. Returns the subprocess returncode."""
     if os.name == "nt":
@@ -150,6 +168,9 @@ def run_subcommand(cmd: str, user_input: str) -> int:
 
     if cmd in takes_input:
         args = [str(t_dispatcher), cmd, user_input]
+    elif cmd == "scan" and (path := _extract_path_arg(user_input)):
+        # "scan scripts/llm.py" should scan that file, not the whole cwd
+        args = [str(t_dispatcher), cmd, path]
     else:
         args = [str(t_dispatcher), cmd]
 
