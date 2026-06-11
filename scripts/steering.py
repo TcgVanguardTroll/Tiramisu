@@ -3,9 +3,9 @@ Steering composition layer for Tiramisu agents.
 
 Every agent invocation should build its system prompt from:
   1. The agent's persona file (agents/<name>.md)
-  2. engineering-principles.md (universal rules) -- optional
-  3. The relevant language sections of code-style.md -- optional, filtered
-  4. communication-style.md -- optional (for commit/review tone)
+  2. steering/engineering-principles.md (universal rules) -- optional
+  3. The relevant language sections of steering/code-style.md -- optional, filtered
+  4. steering/communication-style.md -- optional (for commit/review tone)
   5. Active user preferences from learnings.db
 
 The point: each agent gets a 5x stronger system prompt assembled from the
@@ -86,7 +86,7 @@ def _code_style_for(languages: list[str] | None, include_universal: bool = True)
     if not languages and not include_universal:
         return ""
 
-    text = _read(ROOT / "code-style.md")
+    text = _read(ROOT / "steering" / "code-style.md")
     if not text:
         return ""
 
@@ -206,7 +206,7 @@ def load_steering(
 
     # 2. Engineering principles
     if include_engineering:
-        eng = _read(ROOT / "engineering-principles.md")
+        eng = _read(ROOT / "steering" / "engineering-principles.md")
         if eng:
             parts.append("\n# ENGINEERING PRINCIPLES\n\n" + eng.strip())
 
@@ -218,7 +218,7 @@ def load_steering(
 
     # 4. Communication style
     if include_communication:
-        comm = _read(ROOT / "communication-style.md")
+        comm = _read(ROOT / "steering" / "communication-style.md")
         if comm:
             parts.append("\n# COMMUNICATION STYLE\n\n" + comm.strip())
 
