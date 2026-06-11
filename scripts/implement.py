@@ -432,6 +432,48 @@ Rules:
 """
 
 
+# ----- context management -----
+
+# A long run accumulates tool results (file reads up to 30K chars each).
+# Past this total budget the oldest results get elided in one batch.
+# Batching matters: eliding one round per iteration would move the first
+# changed byte forward every call and invalidate the prompt cache each
+# time, while a batch elision invalidates it once per overflow.
+MAX_TOOL_RESULT_CHARS   = 120_000
+KEEP_RECENT_TOOL_ROUNDS = 4
+ELIDED_NOTE = ("[tool result elided to save context -- "
+               "call the tool again if you still need it]")
+
+
+def trim_tool_history(messages) -> int:
+    """Elide old tool_result contents once their total exceeds the budget.
+
+    Only the `content` string of tool_result blocks is replaced; message
+    structure and tool_use ids are untouched, so the API's tool pairing
+    rules still hold. The most recent KEEP_RECENT_TOOL_ROUNDS rounds are
+    never elided. Returns the number of results elided.
+    """
+    rounds = [m for m in messages
+              if m["role"] == "user" and isinstance(m["content"], list)]
+    total = sum(
+        len(block.get("content") or "")
+        for m in rounds for block in m["content"]
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+    )
+    if total <= MAX_TOOL_RESULT_CHARS:
+        return 0
+
+    elided = 0
+    for m in rounds[:-KEEP_RECENT_TOOL_ROUNDS]:
+        for block in m["content"]:
+            if (isinstance(block, dict)
+                    and block.get("type") == "tool_result"
+                    and block.get("content") != ELIDED_NOTE):
+                block["content"] = ELIDED_NOTE
+                elided += 1
+    return elided
+
+
 def run_agent(initial_messages, system, state: AgentState, max_iterations=50):
     client = _client()
     messages = list(initial_messages)
@@ -485,6 +527,10 @@ def run_agent(initial_messages, system, state: AgentState, max_iterations=50):
         # Append to message history
         messages.append({"role": "assistant", "content": final.content})
         messages.append({"role": "user", "content": tool_results})
+
+        elided = trim_tool_history(messages)
+        if elided:
+            print(f"\n  [context: elided {elided} old tool results to stay under budget]")
 
         # If Eclair called done, exit cleanly
         if state.done_summary is not None:
