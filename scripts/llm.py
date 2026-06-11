@@ -10,18 +10,18 @@ _ENV_FILE = Path(os.environ.get("TIRAMISU_HOME", Path.home() / ".tiramisu")) / "
 # than latency or cost -- PR review, implementation, reflection, scope planning.
 # FAST_MODEL: cheaper, faster model for hot-path tasks called on every commit --
 # commit-message drafts, pre-commit reviews, single-shot preference classification.
-DEFAULT_MODEL  = "claude-sonnet-4-5"
+DEFAULT_MODEL  = "claude-sonnet-4-6"
 FAST_MODEL     = "claude-haiku-4-5"
 
 # Anthropic pricing per 1M tokens (USD), as of 2026.
 # cache_write = 1.25x base input rate, cache_read = 0.10x base input rate.
 # Unknown models fall back to DEFAULT_MODEL rates -- cost is approximate, not billed.
 _COSTS = {
-    "claude-sonnet-4-5": {"input": 3.00, "output": 15.00, "cache_write": 3.75,  "cache_read": 0.30},
-    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00, "cache_write": 3.75,  "cache_read": 0.30},
-    "claude-opus-4-7":   {"input": 15.00, "output": 75.00, "cache_write": 18.75, "cache_read": 1.50},
-    "claude-haiku-4-5":  {"input": 0.80, "output": 4.00,  "cache_write": 1.00,  "cache_read": 0.08},
-    "claude-haiku-3-5":  {"input": 0.80, "output": 4.00,  "cache_write": 1.00,  "cache_read": 0.08},
+    "claude-sonnet-4-5": {"input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30},
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30},
+    "claude-opus-4-8":   {"input": 5.00, "output": 25.00, "cache_write": 6.25, "cache_read": 0.50},
+    "claude-opus-4-7":   {"input": 5.00, "output": 25.00, "cache_write": 6.25, "cache_read": 0.50},
+    "claude-haiku-4-5":  {"input": 1.00, "output": 5.00,  "cache_write": 1.25, "cache_read": 0.10},
 }
 
 
@@ -61,7 +61,8 @@ def _log_api_usage(usage, model):
 
         from memory import log_token_usage
         log_token_usage(script, model, in_tok, out_tok,
-                        cache_write_tok, cache_read_tok, cost)
+                        cache_write_tok, cache_read_tok, cost,
+                        repo_path=os.getcwd())
     except Exception as e:
         print(f"[tiramisu] usage log warning: {type(e).__name__}: {e}", file=sys.stderr)
 
@@ -116,6 +117,7 @@ def invoke(
     kwargs = dict(
         model=model,
         max_tokens=max_tokens,
+        temperature=temperature,
         messages=[{"role": "user", "content": prompt}],
     )
     if system:
@@ -128,10 +130,13 @@ def invoke(
         ]
     resp = client.messages.create(**kwargs)
     _log_api_usage(resp.usage, model)
-    return resp.content[0].text
+    # Iterate blocks rather than assuming content[0] is text -- responses can
+    # lead with non-text blocks (e.g. thinking) depending on model settings.
+    return "".join(b.text for b in resp.content if b.type == "text")
 
 
-def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
+def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048,
+                  thinking=False):
     """Stream Claude's response, printing each chunk as it arrives. Returns full text."""
     client = _client()
     kwargs = dict(
@@ -139,6 +144,11 @@ def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
+    if thinking:
+        # Adaptive: the model decides when and how much to think. Thinking
+        # tokens count toward max_tokens, so callers enabling this should
+        # pass a generous cap.
+        kwargs["thinking"] = {"type": "adaptive"}
     if system:
         kwargs["system"] = [
             {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
@@ -243,7 +253,8 @@ def _plain_stream(client, kwargs, model) -> str:
     return "".join(full)
 
 
-def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
+def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048,
+                           thinking=False):
     """
     Streaming response with optional Markdown rendering.
 
@@ -256,6 +267,10 @@ def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=
     after streaming completes). The both mode preserves real-time feedback
     while still giving you a polished version to scroll back to.
 
+    Set thinking=True for analysis-heavy calls (review, scoping, reflection):
+    the model decides per-request when and how much to think. Thinking tokens
+    count toward max_tokens, so pass a generous cap alongside it.
+
     Returns the raw text for callers that need to parse the response.
     """
     client = _client()
@@ -264,6 +279,8 @@ def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
+    if thinking:
+        kwargs["thinking"] = {"type": "adaptive"}
     if system:
         kwargs["system"] = [
             {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}

@@ -317,7 +317,8 @@ def main():
         ),
         system=system,
         model=DEFAULT_MODEL,
-        max_tokens=3000,
+        max_tokens=8000,
+        thinking=True,
     )
 
     print("-" * 60)

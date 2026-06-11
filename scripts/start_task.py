@@ -121,7 +121,8 @@ def main():
         prompt=PROMPT_TEMPLATE.format(task=task),
         system=system,
         model=DEFAULT_MODEL,
-        max_tokens=2048,
+        max_tokens=8000,
+        thinking=True,
     )
 
     print("-" * 60)

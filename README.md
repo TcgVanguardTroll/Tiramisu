@@ -1,10 +1,14 @@
 # Tiramisu 🍰
 
 [![tests](https://github.com/TcgVanguardTroll/Tiramisu/actions/workflows/test.yml/badge.svg)](https://github.com/TcgVanguardTroll/Tiramisu/actions/workflows/test.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+![Local-first](https://img.shields.io/badge/data-local--first-8A2BE2)
+![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 A personal multi-agent dev system. A crew of pastry-named pets that scope your work, write code, review changes, draft commit messages, and learn your preferences over time. Runs as a CLI, integrates with git via hooks. No IDE plugin required.
 
-MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 83-test suite across 6 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 6-layer steering composition, the memory layer, and the source-config loader. Runs in ~8s with no API calls (Anthropic client is mocked).
+MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 108-test suite across 7 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 6-layer steering composition, the memory layer + schema migrations, and the source-config loader. Runs in seconds with no API calls (Anthropic client is mocked).
 
 ## The Crew
 
@@ -86,10 +90,10 @@ If you already know which agent you want, skip the router:
 
 ## What happens automatically at every `git commit`
 
-After `t hook` in a repo, every commit triggers:
+After `t hook` in a repo, every commit triggers (in git's hook order):
 
-1. 🦡🍫 **Éclair drafts the commit message** from your staged diff, using your last 5 commits as few-shot examples so the voice matches yours.
-2. 🐱🍪 **Cookie reviews** the diff plus the full content of each changed file. She has your engineering principles, code style for the relevant languages, and your learned preferences in her system prompt. She halts on `[BLOCKER]` and prompts to override.
+1. 🐱🍪 **Cookie reviews** the staged diff plus the full content of each changed file (`pre-commit`). She has your engineering principles, code style for the relevant languages, and your learned preferences in her system prompt. She halts on `[BLOCKER]` and prompts to override.
+2. 🦡🍫 **Éclair drafts the commit message** from your staged diff (`prepare-commit-msg`), using your last 5 commits as few-shot examples so the voice matches yours.
 3. 📊 **Post-commit captures** the final message you actually shipped, so Éclair learns whether her drafts are landing as-is or getting heavily edited.
 
 Skip for one commit: `git commit --no-verify`.
@@ -153,11 +157,14 @@ The agents will know these rules apply only in that project.
 
 ## Setup
 
-### Prerequisites
+### Requirements
 
-- Python 3.10+ (3.14 tested)
-- Git + [GitHub CLI](https://cli.github.com/) — the CLI is only required for `t pr --post`
-- An [Anthropic API key](https://console.anthropic.com/)
+| Requirement | Why | Get it |
+|---|---|---|
+| Python 3.10+ (3.14 tested) | Runs every agent script | [python.org](https://www.python.org/downloads/) |
+| Git | Hooks, diff plumbing, `gitutil.py` | [git-scm.com](https://git-scm.com/) |
+| Anthropic API key | The models behind the crew | [console.anthropic.com](https://console.anthropic.com/) |
+| GitHub CLI *(optional)* | Only needed for `t pr --post` inline comments | [cli.github.com](https://cli.github.com/) |
 
 ### Install — 2 commands either platform
 
@@ -192,6 +199,8 @@ tiramisu
 
 | Topic | Where |
 |---|---|
+| **Design** — architecture, data model, and workflow diagrams (Mermaid) | [docs/DESIGN.md](docs/DESIGN.md) |
+| **Invariants** — the rules the test suite enforces | [docs/INVARIANTS.md](docs/INVARIANTS.md) |
 | **Autonomous research** — anchors + GitHub/HN/arxiv discovery + local-library ingest + PDF auto-split + library scout | [docs/RESEARCH.md](docs/RESEARCH.md) |
 | **Terminal UI** — `TIRAMISU_RENDER` modes + animal-themed spinners + REPL keys | [docs/UI.md](docs/UI.md) |
 | **Contributing / writing agents** — invariants, persona template, recipes | [docs/DEVELOPING.md](docs/DEVELOPING.md) and [CLAUDE.md](CLAUDE.md) |
@@ -199,7 +208,15 @@ tiramisu
 
 ---
 
-## Per-user data
+## Data & privacy
+
+Everything Tiramisu learns stays on your machine — `learnings.db` is plain
+SQLite, there is no cloud sync and no telemetry. The only data that leaves
+your machine is what gets sent to the Anthropic API to do the work you asked
+for: staged diffs and changed-file contents (reviews), file contents the
+agents read via tools (implement / chat / scan), and your prompts. Per-repo
+`.tiramisu/*.md` overrides and learned preferences ride along inside system
+prompts. Nothing is sent anywhere when you aren't running a command.
 
 | Path | What lives there |
 |------|------------------|
@@ -259,7 +276,10 @@ tiramisu/
 │   ├── pr_review.py         # `t pr` -- branch review, --post creates inline PR comments
 │   ├── start_task.py        # `t task` -- Croissant scope session
 │   ├── reflect.py           # `t reflect` -- Madeleine's insights
-│   ├── research.py          # `t research` -- Cannoli's autonomous research
+│   ├── research.py          # `t research` -- Cannoli's watched sources + CLI
+│   ├── research_discovery.py# GitHub / HN / arxiv scouting + paper grab
+│   ├── research_library.py  # Library ingestion + PDF auto-split + scout
+│   ├── research_common.py   # Shared research config + HTTP plumbing
 │   ├── learn.py             # `t learn` -- preference management
 │   ├── install_hooks.py     # `t hook`
 │   ├── memory.py            # learnings.db layer
@@ -269,9 +289,13 @@ tiramisu/
 │   ├── gitutil.py           # cross-platform git resolution
 │   └── llm.py               # Anthropic API client with prompt caching
 ├── docs/                    # Deep dives for advanced features
+│   ├── DESIGN.md            # Architecture + data model + workflow diagrams (Mermaid)
+│   ├── INVARIANTS.md        # The rules the test suite enforces
 │   ├── RESEARCH.md          # Autonomous research subsystem
 │   ├── UI.md                # Render modes + spinners + REPL keys
 │   └── DEVELOPING.md        # Contributor / agent-developer pointer
+├── tests/                   # 108-test pytest suite (safety, router, steering, memory)
+├── .github/workflows/       # CI: 3 OS x 2 Python matrix on every push / PR
 ├── code-style.md            # Per-language style (Java / Python / Rust / TypeScript)
 ├── engineering-principles.md# Distilled from Bloch / Martin / Ousterhout / Kleppmann / Nygard
 ├── communication-style.md   # Tone, commit format, PR description template

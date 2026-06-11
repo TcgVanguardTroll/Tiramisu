@@ -58,6 +58,7 @@ ROUTES = {
     "chat":      "have a conversation: ask questions, explain code, think out loud, plan -- read-only, with memory",
     "learn":     "record a new user preference for the agents to remember",
     "reflect":   "produce a weekly insights report from accumulated data",
+    "research":  "show Cannoli's research findings -- what's new from watched external sources",
     "help":      "show the command list / general help",
 }
 
@@ -79,6 +80,8 @@ Examples of correct routing:
   "i want to think through Y"         -> chat
   "remember I like guard clauses"     -> learn
   "show me my patterns"               -> reflect
+  "what did cannoli find"             -> research
+  "anything new from my sources"      -> research
   "what can you do"                   -> help
 
 Rules:
@@ -102,7 +105,16 @@ PROMPT_STYLE = Style.from_dict({
 
 
 def route(user_input: str) -> str:
-    """Ask FAST_MODEL which agent should handle this request."""
+    """Pick the command for this request. Exact command words skip the LLM;
+    everything else is routed by FAST_MODEL."""
+    # Deterministic fast path: the input IS a command word ("scan", "pr",
+    # "review", ...). Free, instant, and can't misroute. Only an exact
+    # single-token match qualifies -- "help me think through X" must still
+    # reach the LLM (it's a chat question, not `t help`).
+    exact = user_input.strip().lower()
+    if exact in ROUTES:
+        return exact
+
     routes_block = "\n".join(f"  - {k:10} -- {v}" for k, v in ROUTES.items())
     prompt = ROUTER_PROMPT.format(routes=routes_block, input=user_input)
 
@@ -123,6 +135,24 @@ def route(user_input: str) -> str:
     return cmd
 
 
+def _extract_path_arg(user_input: str) -> str | None:
+    """Find a real filesystem path mentioned in the input.
+
+    The router's input is natural language, so it can't be passed to
+    `t scan` verbatim -- "is my code clean" is not a path. But "scan
+    scripts/llm.py" mentions one, and dropping it silently scans the whole
+    cwd instead. Only a token that actually exists on disk is safe to
+    forward; everything else stays natural language. First match wins.
+    """
+    for token in user_input.split():
+        candidate = token.strip("\"'`,;:!?")
+        if not candidate or candidate in (".", ".."):
+            continue
+        if Path(candidate).exists():
+            return candidate
+    return None
+
+
 def run_subcommand(cmd: str, user_input: str) -> int:
     """Exec t.bat <cmd> [user_input]. Returns the subprocess returncode."""
     if os.name == "nt":
@@ -138,6 +168,9 @@ def run_subcommand(cmd: str, user_input: str) -> int:
 
     if cmd in takes_input:
         args = [str(t_dispatcher), cmd, user_input]
+    elif cmd == "scan" and (path := _extract_path_arg(user_input)):
+        # "scan scripts/llm.py" should scan that file, not the whole cwd
+        args = [str(t_dispatcher), cmd, path]
     else:
         args = [str(t_dispatcher), cmd]
 

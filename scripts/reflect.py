@@ -151,6 +151,15 @@ def format_token_usage(stats):
                 f"    {m['model']:25}  {m['calls']:>4} calls  ${m['cost_usd']:.4f}"
             )
 
+    by_repo = t.get("by_repo", [])
+    if by_repo:
+        lines.append("")
+        lines.append("  By project:")
+        for r in by_repo[:8]:
+            lines.append(
+                f"    {r['repo']:40}  {r['calls']:>4} calls  ${r['cost_usd']:.4f}"
+            )
+
     return "\n".join(lines)
 
 
@@ -223,7 +232,8 @@ def main():
         ),
         system=system,
         model=DEFAULT_MODEL,
-        max_tokens=2048,
+        max_tokens=8000,
+        thinking=True,
     )
     print()
 

@@ -26,6 +26,13 @@ def test_routes_dict_has_known_commands():
     assert not missing, f"required commands missing from ROUTES: {missing}"
 
 
+def test_research_is_routable():
+    """Cannoli has a CLI surface (`t research` in both dispatchers), so the
+    natural-language entry must be able to reach it."""
+    from dispatch import ROUTES
+    assert "research" in ROUTES
+
+
 def test_routes_have_non_empty_descriptions():
     """Each route's description goes into the router prompt. Empty
     descriptions would make the LLM unable to pick correctly."""
@@ -115,6 +122,83 @@ def test_router_strips_parens_and_brackets(mock_invoke):
     from dispatch import route
     mock_invoke.set("(implement)")
     assert route("anything") == "implement"
+
+
+# --------------------------------------------------------------------------
+# route(): deterministic fast path for exact command words
+# --------------------------------------------------------------------------
+
+def test_router_exact_command_word_skips_llm(monkeypatch):
+    """A bare command word routes deterministically -- no API call at all."""
+    import llm
+    import dispatch
+
+    def must_not_be_called(*args, **kwargs):
+        raise AssertionError("LLM must not be called for exact command words")
+
+    # Patch both -- see conftest.mock_invoke for why
+    monkeypatch.setattr(llm, "invoke", must_not_be_called)
+    monkeypatch.setattr(dispatch, "invoke", must_not_be_called)
+
+    for cmd in ("scan", "pr", "review", "reflect", "help", "research"):
+        assert dispatch.route(cmd) == cmd
+
+
+def test_router_fast_path_normalizes_case_and_whitespace(monkeypatch):
+    import llm
+    import dispatch
+
+    def must_not_be_called(*args, **kwargs):
+        raise AssertionError("LLM must not be called for exact command words")
+
+    monkeypatch.setattr(llm, "invoke", must_not_be_called)
+    monkeypatch.setattr(dispatch, "invoke", must_not_be_called)
+
+    assert dispatch.route("  SCAN  ") == "scan"
+
+
+def test_router_multiword_input_still_uses_llm(mock_invoke):
+    """'help me think through X' is a chat question, not `t help` -- any
+    input that isn't exactly a command word must reach the LLM router."""
+    from dispatch import route
+    mock_invoke.set("chat")
+    assert route("help me think through the auth flow") == "chat"
+
+
+# --------------------------------------------------------------------------
+# _extract_path_arg(): forwarding real paths to `t scan`
+# --------------------------------------------------------------------------
+
+def test_extract_path_finds_existing_file(tmp_workspace):
+    from dispatch import _extract_path_arg
+    (tmp_workspace / "llm.py").write_text("x")
+    assert _extract_path_arg("scan llm.py for issues") == "llm.py"
+
+
+def test_extract_path_finds_existing_directory(tmp_workspace):
+    from dispatch import _extract_path_arg
+    (tmp_workspace / "scripts").mkdir()
+    assert _extract_path_arg("look over scripts please") == "scripts"
+
+
+def test_extract_path_ignores_natural_language(tmp_workspace):
+    """Pure natural language has no real path -- nothing must be forwarded,
+    or `t scan` would error on a bogus argument."""
+    from dispatch import _extract_path_arg
+    assert _extract_path_arg("is my code clean") is None
+
+
+def test_extract_path_strips_quotes(tmp_workspace):
+    from dispatch import _extract_path_arg
+    (tmp_workspace / "main.py").write_text("x")
+    assert _extract_path_arg("scan 'main.py'") == "main.py"
+
+
+def test_extract_path_skips_dot(tmp_workspace):
+    """'.' always exists; forwarding it is pointless (scan defaults to cwd)
+    and risks matching sentence-ending periods."""
+    from dispatch import _extract_path_arg
+    assert _extract_path_arg("scan . now") is None
 
 
 # --------------------------------------------------------------------------

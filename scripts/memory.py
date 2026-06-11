@@ -131,6 +131,15 @@ MIGRATIONS = [
         # "no blocker / not yet known."
         "ALTER TABLE commit_drafts ADD COLUMN has_blockers INTEGER DEFAULT 0",
     ),
+    (
+        3,
+        "Add token_usage.repo_path for per-project cost breakdown",
+        # reviews and commit_drafts already record repo_path; token_usage
+        # was the only learning table without it, so `t reflect` could not
+        # answer "which project is costing me money?". NULL means "logged
+        # before this migration" -- old rows stay aggregate-only.
+        "ALTER TABLE token_usage ADD COLUMN repo_path TEXT",
+    ),
 ]
 
 
@@ -308,16 +317,16 @@ def update_commit_final(repo_path: str | Path, final: str) -> int | None:
 @_safe
 def log_token_usage(script: str, model: str, input_tokens: int, output_tokens: int,
                     cache_create_tokens: int = 0, cache_read_tokens: int = 0,
-                    cost_usd: float = 0.0) -> None:
+                    cost_usd: float = 0.0, repo_path: str | None = None) -> None:
     """Fire-and-forget log of one API call's token usage."""
     with _connection() as conn:
         conn.execute(
             "INSERT INTO token_usage "
             "(script, model, input_tokens, output_tokens, cache_create_tokens, "
-            " cache_read_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " cache_read_tokens, cost_usd, repo_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (script, model, int(input_tokens or 0), int(output_tokens or 0),
              int(cache_create_tokens or 0), int(cache_read_tokens or 0),
-             float(cost_usd or 0.0)),
+             float(cost_usd or 0.0), repo_path),
         )
 
 
@@ -454,6 +463,15 @@ def stats_since(days: int = 30) -> dict[str, Any]:
                 (cutoff,),
             ).fetchall()
 
+            # repo_path is NULL on rows logged before migration v3; those
+            # land in a single "(unknown)" bucket rather than disappearing.
+            token_by_repo = conn.execute(
+                "SELECT COALESCE(repo_path, '(unknown)'), COUNT(*), SUM(cost_usd) "
+                "FROM token_usage WHERE ts > ? GROUP BY repo_path "
+                "ORDER BY SUM(cost_usd) DESC",
+                (cutoff,),
+            ).fetchall()
+
             return {
                 "days": days,
                 "reviews": {row[0]: row[1] for row in reviews},
@@ -477,6 +495,9 @@ def stats_since(days: int = 30) -> dict[str, Any]:
                     "by_model":           [{"model": r[0], "calls": r[1],
                                             "cost_usd": r[2] or 0.0}
                                            for r in token_by_model],
+                    "by_repo":            [{"repo": r[0], "calls": r[1],
+                                            "cost_usd": r[2] or 0.0}
+                                           for r in token_by_repo],
                 },
             }
     except Exception as e:
