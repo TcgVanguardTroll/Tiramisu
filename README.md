@@ -8,7 +8,7 @@
 
 A personal multi-agent dev system. A crew of pastry-named pets that scope your work, write code, review changes, draft commit messages, and learn your preferences over time. Runs as a CLI, integrates with git via hooks. No IDE plugin required.
 
-MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 108-test suite across 7 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 6-layer steering composition, the memory layer + schema migrations, and the source-config loader. Runs in seconds with no API calls (Anthropic client is mocked).
+MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 142-test suite across 10 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 6-layer steering composition, the memory layer + schema migrations, and the source-config loader. Runs in seconds with no API calls (Anthropic client is mocked).
 
 ## The Crew
 
@@ -22,8 +22,8 @@ Every agent is named after a pastry that matches their fur. All dogs share 🐶,
 | **Croissant** | 🐶🥐 | Corgi | PM — scopes tasks, defines acceptance criteria |
 | **Madeleine** | 🐱🧁 | Ginger tabby | Knowledge keeper — surfaces patterns from accumulated data |
 | **Cannoli** | 🐶🍩 | Beagle | Researcher — scans external sources, ingests your library |
-| **Mochi** | 🐰🍡 | White lop rabbit | Brainstorm *(planned)* |
-| **Brioche** | 🐶🍞 | Golden retriever | HR — onboards new agents *(planned)* |
+| **Mochi** | 🐰🍡 | White lop rabbit | Brainstorm — stress-tests ideas before they become tasks |
+| **Brioche** | 🐶🍞 | Golden retriever | HR — drafts new agent personas for unmet needs |
 
 ---
 
@@ -82,6 +82,8 @@ If you already know which agent you want, skip the router:
 | `t learn list` | Show all active preferences |
 | `t reflect [days]` | Madeleine's self-improvement report from accumulated data |
 | `t research [...]` | Cannoli's external research — see [docs/RESEARCH.md](docs/RESEARCH.md) |
+| `t brainstorm "topic"` | Mochi stress-tests an idea — angles, hidden assumptions, the boring alternative |
+| `t onboard "need"` | Brioche drafts a new agent persona for a job the crew can't cover |
 | `t help` | Print the command list |
 
 `t` skips the ~200ms LLM router step. `tiramisu` is friendlier.
@@ -294,7 +296,7 @@ tiramisu/
 │   ├── RESEARCH.md          # Autonomous research subsystem
 │   ├── UI.md                # Render modes + spinners + REPL keys
 │   └── DEVELOPING.md        # Contributor / agent-developer pointer
-├── tests/                   # 108-test pytest suite (safety, router, steering, memory)
+├── tests/                   # 142-test pytest suite (safety, router, steering, memory)
 ├── .github/workflows/       # CI: 3 OS x 2 Python matrix on every push / PR
 ├── steering/                # Shared steering docs (composed into every agent prompt)
 │   ├── code-style.md        # Per-language style (Java / Python / Rust / TypeScript)

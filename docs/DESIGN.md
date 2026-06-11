@@ -26,6 +26,8 @@ flowchart TD
     T --> REFL["reflect.py · Madeleine<br/>insights from data"]
     T --> RES["research.py · Cannoli<br/>watched sources + CLI<br/>(research_discovery / research_library /<br/>research_common)"]
     T --> LEARN["learn.py<br/>preference management"]
+    T --> BRAIN["brainstorm.py · Mochi<br/>idea stress-testing"]
+    T --> ONB["onboard.py · Brioche<br/>new-agent personas"]
 
     subgraph SHARED["Shared services (scripts/)"]
         ST[steering.py<br/>prompt composition]
@@ -34,7 +36,7 @@ flowchart TD
         GU[gitutil.py · personas.py · spinners.py]
     end
 
-    TASK & IMPL & CHAT & SCAN & REFL & RES & LEARN --> ST
+    TASK & IMPL & CHAT & SCAN & REFL & RES & LEARN & BRAIN & ONB --> ST
     ST --> LLM
     LLM -->|Messages API<br/>prompt-cached| API[(Anthropic API)]
     LLM -->|usage + cost| MEM
