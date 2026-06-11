@@ -38,8 +38,10 @@ def tmp_tiramisu_home(monkeypatch, tmp_path):
 
     # Patch already-imported modules' captured paths.
     for mod_name, attrs in (
-        ("memory",   ("TIRAMISU_HOME", "DB_PATH")),
-        ("research", ("TIRAMISU_HOME",)),
+        ("memory",            ("TIRAMISU_HOME", "DB_PATH")),
+        ("research",          ("TIRAMISU_HOME",)),
+        ("research_common",   ("TIRAMISU_HOME",)),
+        ("research_discovery", ("TIRAMISU_HOME",)),
     ):
         try:
             mod = __import__(mod_name)
@@ -118,7 +120,8 @@ def mock_invoke(monkeypatch):
 
     # Then patch each consumer's local reference. Importing the module first
     # ensures the bound name exists before we replace it.
-    for mod_name in ("dispatch", "learn", "research"):
+    for mod_name in ("dispatch", "learn", "research",
+                     "research_discovery", "research_library"):
         try:
             mod = __import__(mod_name)
             if hasattr(mod, "invoke"):
