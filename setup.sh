@@ -25,10 +25,10 @@ if [ -z "$PYTHON" ]; then
     echo "  Install Python 3.10+ and retry."
     exit 1
 fi
-echo "  [1/4] Python: $($PYTHON --version) -- $(command -v "$PYTHON")"
+echo "  [1/5] Python: $($PYTHON --version) -- $(command -v "$PYTHON")"
 
 # 2. Install dependencies
-echo "  [2/4] Installing dependencies..."
+echo "  [2/5] Installing dependencies..."
 "$PYTHON" -m pip install --quiet --disable-pip-version-check \
     -r "$INSTALL_DIR/requirements.txt"
 echo "        Done (anthropic, rich, prompt_toolkit)."
@@ -46,12 +46,12 @@ for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.config/fish/config.fish"; do
                 echo "$EXPORT_LINE" >> "$rc"
                 ;;
         esac
-        echo "  [3/4] Added to: $rc"
+        echo "  [3/5] Added to: $rc"
         needs_restart=1
     fi
 done
 if [ "$needs_restart" -eq 0 ]; then
-    echo "  [3/4] PATH already configured."
+    echo "  [3/5] PATH already configured."
 fi
 
 # 4. Ensure .env exists with a key placeholder
@@ -65,13 +65,34 @@ if [ ! -f "$ENV_FILE" ]; then
 # Get your key at: https://console.anthropic.com/
 ANTHROPIC_API_KEY=
 EOF
-    echo "  [4/4] Created: $ENV_FILE"
+    echo "  [4/5] Created: $ENV_FILE"
     needs_key=1
 elif ! grep -qE '^ANTHROPIC_API_KEY=\S' "$ENV_FILE"; then
-    echo "  [4/4] .env exists but no API key set: $ENV_FILE"
+    echo "  [4/5] .env exists but no API key set: $ENV_FILE"
     needs_key=1
 else
-    echo "  [4/4] .env exists with API key."
+    echo "  [4/5] .env exists with API key."
+fi
+
+# 5. Schedule weekly research (cron) -- Cannoli scans sources Mondays 09:00
+#    even if you don't open tiramisu that week. Findings are proposals only;
+#    nothing is applied without `t research apply` + a y/N per edit.
+#    Remove with:  crontab -l | grep -v 'tiramisu-research' | crontab -
+if command -v crontab >/dev/null 2>&1; then
+    CRON_TAG="# tiramisu-research"
+    if crontab -l 2>/dev/null | grep -qF "$CRON_TAG"; then
+        echo "  [5/5] Weekly research already scheduled (cron)."
+    else
+        CRON_LINE="0 9 * * 1 \"$INSTALL_DIR/t\" research all --quiet >> \"$HOME/.tiramisu/research.log\" 2>&1 $CRON_TAG"
+        if ( crontab -l 2>/dev/null; echo "$CRON_LINE" ) | crontab - 2>/dev/null; then
+            echo "  [5/5] Scheduled weekly research: Mondays 09:00 (cron)."
+        else
+            echo "  [5/5] Could not register cron job -- research still"
+            echo "        auto-runs in the background when you use tiramisu."
+        fi
+    fi
+else
+    echo "  [5/5] No crontab here -- research still auto-runs when you use tiramisu."
 fi
 
 # Summary
