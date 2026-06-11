@@ -101,9 +101,10 @@ tiramisu/
 │   └── INVARIANTS.md             The rules the test suite enforces (read before touching safety/schema)
 ├── tests/                        108-test pytest suite (safety, router, steering, memory, sources)
 ├── .github/workflows/test.yml    CI matrix: 3 OS x 2 Python on every push/PR
-├── code-style.md                 Per-language style rules (Java/Python/Rust/TS)
-├── engineering-principles.md     Universal design rules (Bloch/Martin/Ousterhout/etc.)
-├── communication-style.md        Tone, commit format, PR template
+├── steering/                     Shared steering docs (composed into every prompt)
+│   ├── code-style.md             Per-language style rules (Java/Python/Rust/TS)
+│   ├── engineering-principles.md Universal design rules (Bloch/Martin/Ousterhout/etc.)
+│   └── communication-style.md    Tone, commit format, PR template
 ├── README.md                     User-facing entry point
 ├── CLAUDE.md                     This file
 ├── t.bat / tiramisu.bat          Windows dispatchers (CRLF, pinned)
@@ -127,7 +128,7 @@ run …" to a persona, stop — that goes in the script.
 Every agent's system prompt is composed by `scripts/steering.py`:
 `persona + engineering-principles + filtered code-style + preferences + per-repo overrides`.
 DO NOT inline engineering principles into individual personas. If a rule
-applies to all agents, put it in `engineering-principles.md`. If it applies
+applies to all agents, put it in `steering/engineering-principles.md`. If it applies
 only to Cookie, put it in `cookie.md` voice section.
 
 ### 4.3 — Learn before mutate
@@ -188,9 +189,9 @@ one OS, errors on the other.
 
 ### Add a new steering layer
 1. Decide what scope it has: universal, per-language, or agent-specific.
-2. Edit the appropriate file: `engineering-principles.md` for universal,
-   `code-style.md` for per-language, the persona file for agent-specific.
-3. Do not create new top-level steering files without coordinating with
+2. Edit the appropriate file: `steering/engineering-principles.md` for universal,
+   `steering/code-style.md` for per-language, the persona file for agent-specific.
+3. Do not create new files in `steering/` without coordinating with
    `scripts/steering.py` — it loads a fixed set.
 
 ### Add a tool to an agent that has tool use (Éclair / Tiramisu chat)
@@ -217,7 +218,7 @@ If asked to do any of these, raise it before implementing:
 
 ## 7. Code style at a glance
 
-(Full version in `code-style.md` and `engineering-principles.md`. Highlights:)
+(Full version in `steering/code-style.md` and `steering/engineering-principles.md`. Highlights:)
 
 ### Python — most of this codebase
 - Type-annotate public function signatures

@@ -296,9 +296,10 @@ tiramisu/
 │   └── DEVELOPING.md        # Contributor / agent-developer pointer
 ├── tests/                   # 108-test pytest suite (safety, router, steering, memory)
 ├── .github/workflows/       # CI: 3 OS x 2 Python matrix on every push / PR
-├── code-style.md            # Per-language style (Java / Python / Rust / TypeScript)
-├── engineering-principles.md# Distilled from Bloch / Martin / Ousterhout / Kleppmann / Nygard
-├── communication-style.md   # Tone, commit format, PR description template
+├── steering/                # Shared steering docs (composed into every agent prompt)
+│   ├── code-style.md        # Per-language style (Java / Python / Rust / TypeScript)
+│   ├── engineering-principles.md  # Distilled from Bloch / Martin / Ousterhout / etc.
+│   └── communication-style.md     # Tone, commit format, PR description template
 ├── CLAUDE.md                # Load-bearing architectural invariants for AI agents
 ├── t.bat / t                # CLI dispatcher (Windows / POSIX)
 ├── tiramisu.bat / tiramisu  # REPL dispatcher (Windows / POSIX)
