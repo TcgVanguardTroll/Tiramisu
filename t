@@ -54,6 +54,14 @@ case "$cmd" in
         # t research [show|run|mute|list|sources ...]
         "$PYTHON" "$TIRAMISU_ROOT/scripts/research.py" "$@"
         ;;
+    brainstorm)
+        # t brainstorm [topic]
+        "$PYTHON" "$TIRAMISU_ROOT/scripts/brainstorm.py" "$@"
+        ;;
+    onboard)
+        # t onboard [description of the unmet need]
+        "$PYTHON" "$TIRAMISU_ROOT/scripts/onboard.py" "$@"
+        ;;
     help|--help|-h|"")
         cat <<EOF
 
@@ -70,6 +78,8 @@ case "$cmd" in
   t learn "text"      Teach the agents a preference
   t reflect [days]    Weekly self-improvement report
   t research [action] Cannoli's external research; auto-runs weekly
+  t brainstorm [...]  Mochi stress-tests an idea before you scope it
+  t onboard [...]     Brioche drafts a new agent persona for an unmet need
   t help              This message
 
 EOF
