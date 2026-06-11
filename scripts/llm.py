@@ -129,10 +129,13 @@ def invoke(
         ]
     resp = client.messages.create(**kwargs)
     _log_api_usage(resp.usage, model)
-    return resp.content[0].text
+    # Iterate blocks rather than assuming content[0] is text -- responses can
+    # lead with non-text blocks (e.g. thinking) depending on model settings.
+    return "".join(b.text for b in resp.content if b.type == "text")
 
 
-def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
+def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048,
+                  thinking=False):
     """Stream Claude's response, printing each chunk as it arrives. Returns full text."""
     client = _client()
     kwargs = dict(
@@ -140,6 +143,11 @@ def invoke_stream(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
+    if thinking:
+        # Adaptive: the model decides when and how much to think. Thinking
+        # tokens count toward max_tokens, so callers enabling this should
+        # pass a generous cap.
+        kwargs["thinking"] = {"type": "adaptive"}
     if system:
         kwargs["system"] = [
             {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
@@ -244,7 +252,8 @@ def _plain_stream(client, kwargs, model) -> str:
     return "".join(full)
 
 
-def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048):
+def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=2048,
+                           thinking=False):
     """
     Streaming response with optional Markdown rendering.
 
@@ -257,6 +266,10 @@ def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=
     after streaming completes). The both mode preserves real-time feedback
     while still giving you a polished version to scroll back to.
 
+    Set thinking=True for analysis-heavy calls (review, scoping, reflection):
+    the model decides per-request when and how much to think. Thinking tokens
+    count toward max_tokens, so pass a generous cap alongside it.
+
     Returns the raw text for callers that need to parse the response.
     """
     client = _client()
@@ -265,6 +278,8 @@ def invoke_stream_markdown(prompt, system=None, model=DEFAULT_MODEL, max_tokens=
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
+    if thinking:
+        kwargs["thinking"] = {"type": "adaptive"}
     if system:
         kwargs["system"] = [
             {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}

@@ -413,7 +413,8 @@ def chat_turn(messages, system, client):
         try:
             with client.messages.stream(
                 model=DEFAULT_MODEL,
-                max_tokens=4096,
+                max_tokens=8192,
+                thinking={"type": "adaptive"},
                 system=system_blocks,
                 tools=TOOLS,
                 messages=messages,
