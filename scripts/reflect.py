@@ -57,6 +57,12 @@ Be honest if the data is too sparse to draw conclusions. Do not invent patterns.
 
 ## Active preferences already in place
 {preferences}
+
+## Natural-language router decisions
+{routing}
+
+(If fallbacks cluster around a phrasing, propose a new example line for the
+router prompt in `scripts/dispatch.py` -- propose only, never apply.)
 """
 
 
@@ -99,6 +105,24 @@ def format_recent_finals(stats):
     if not finals:
         return "  (no commits logged yet)"
     return "\n\n---\n".join(f.strip()[:400] for f in finals[:10])
+
+
+def format_routing(stats):
+    routing = stats.get("routing", {})
+    by_via = routing.get("by_via", {})
+    if not by_via:
+        return "  (no routing decisions logged yet)"
+    total = sum(by_via.values())
+    lines = [f"  Total routed inputs: {total}"]
+    for via in ("fast", "llm", "fallback", "error"):
+        if via in by_via:
+            pct = by_via[via] / total * 100
+            lines.append(f"  - {via}: {by_via[via]} ({pct:.0f}%)")
+    fallbacks = routing.get("fallbacks", [])
+    if fallbacks:
+        lines.append("  Inputs the router could not place:")
+        lines.extend(f"    - {f[:120]!r}" for f in fallbacks[:10])
+    return "\n".join(lines)
 
 
 def format_preferences():
@@ -229,6 +253,7 @@ def main():
             overrides=format_overrides(stats),
             recent_finals=format_recent_finals(stats),
             preferences=format_preferences(),
+            routing=format_routing(stats),
         ),
         system=system,
         model=DEFAULT_MODEL,

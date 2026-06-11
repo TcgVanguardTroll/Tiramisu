@@ -50,6 +50,7 @@ from prompt_toolkit.formatted_text import FormattedText
 # What the router can route to. Keys are the t.bat subcommand; values describe
 # when to pick them. The prompt below renders these for the model.
 ROUTES = {
+    "brainstorm": "bounce an idea around; generate options and alternatives; stress-test a plan BEFORE scoping it",
     "task":      "define scope, acceptance criteria, IN/OUT, and risks BEFORE writing code",
     "implement": "write or edit code; create new files; refactor",
     "scan":      "read the current directory in full to look for issues; no commit involved",
@@ -59,6 +60,7 @@ ROUTES = {
     "learn":     "record a new user preference for the agents to remember",
     "reflect":   "produce a weekly insights report from accumulated data",
     "research":  "show Cannoli's research findings -- what's new from watched external sources",
+    "onboard":   "create a brand-new agent persona for a job the crew can't cover yet",
     "help":      "show the command list / general help",
 }
 
@@ -71,6 +73,9 @@ Pick the SINGLE best command to handle it from this list:
 Examples of correct routing:
   "add a logout button"               -> implement
   "scope a refactor of auth"          -> task
+  "give me options for caching here"  -> brainstorm
+  "is this idea even worth building"  -> brainstorm
+  "we need an agent for infra review" -> onboard
   "is my code clean"                  -> scan
   "review my staged diff"             -> review
   "check this PR"                     -> pr
@@ -104,16 +109,20 @@ PROMPT_STYLE = Style.from_dict({
 })
 
 
-def route(user_input: str) -> str:
-    """Pick the command for this request. Exact command words skip the LLM;
-    everything else is routed by FAST_MODEL."""
+def route_ex(user_input: str) -> tuple[str, str]:
+    """Pick the command for this request. Returns (command, via) where via
+    is one of: fast (exact command word, no API call), llm (router model),
+    fallback (router returned an unknown command), error (API failure).
+
+    Callers that route real traffic should log the decision via
+    memory.log_route so `t reflect` can audit the router."""
     # Deterministic fast path: the input IS a command word ("scan", "pr",
     # "review", ...). Free, instant, and can't misroute. Only an exact
     # single-token match qualifies -- "help me think through X" must still
     # reach the LLM (it's a chat question, not `t help`).
     exact = user_input.strip().lower()
     if exact in ROUTES:
-        return exact
+        return exact, "fast"
 
     routes_block = "\n".join(f"  - {k:10} -- {v}" for k, v in ROUTES.items())
     prompt = ROUTER_PROMPT.format(routes=routes_block, input=user_input)
@@ -123,16 +132,21 @@ def route(user_input: str) -> str:
     except Exception as e:
         console.print(f"[red][tiramisu][/red] router failed ({type(e).__name__}: {e}); "
                       f"falling back to [cyan]task[/cyan].")
-        return "task"
+        return "task", "error"
 
     cmd = raw.strip().lower().split()[0].strip(".,;:'\"()[]") if raw.strip() else ""
 
     if cmd not in ROUTES:
         console.print(f"[yellow][tiramisu][/yellow] router returned unknown command "
                       f"[dim]{cmd!r}[/dim]; falling back to [cyan]task[/cyan].")
-        return "task"
+        return "task", "fallback"
 
-    return cmd
+    return cmd, "llm"
+
+
+def route(user_input: str) -> str:
+    """Backward-compatible wrapper: just the command."""
+    return route_ex(user_input)[0]
 
 
 def _extract_path_arg(user_input: str) -> str | None:
@@ -164,7 +178,7 @@ def run_subcommand(cmd: str, user_input: str) -> int:
         console.print(f"[red][tiramisu][/red] missing dispatcher: {t_dispatcher}")
         return 1
 
-    takes_input = {"task", "implement", "learn", "chat"}
+    takes_input = {"task", "implement", "learn", "chat", "brainstorm", "onboard"}
 
     if cmd in takes_input:
         args = [str(t_dispatcher), cmd, user_input]
@@ -176,6 +190,16 @@ def run_subcommand(cmd: str, user_input: str) -> int:
 
     result = subprocess.run(args)
     return result.returncode
+
+
+def _log_route_decision(user_input: str, cmd: str, via: str) -> None:
+    """Best-effort routing log for `t reflect`'s router audit. Fail-soft:
+    a logging failure must never block the user's actual command."""
+    try:
+        import memory
+        memory.log_route(user_input, cmd, via)
+    except Exception:
+        pass
 
 
 # -------- REPL --------
@@ -293,7 +317,8 @@ def repl():
 
         try:
             with console.status("[dim]Tiramisu is routing…[/dim]", spinner=_spinners.chosen()):
-                cmd = route(user_input)
+                cmd, via = route_ex(user_input)
+            _log_route_decision(user_input, cmd, via)
             console.print(f"  [dim]→[/dim] [bold cyan]t {cmd}[/bold cyan]\n")
             run_subcommand(cmd, user_input)
             console.print()
@@ -325,7 +350,8 @@ def main():
         sys.exit(1)
 
     with console.status("[dim]Tiramisu is routing…[/dim]", spinner=_spinners.chosen()):
-        cmd = route(user_input)
+        cmd, via = route_ex(user_input)
+    _log_route_decision(user_input, cmd, via)
 
     preview = user_input if len(user_input) <= 60 else user_input[:60] + "..."
     console.print(f"\n[bold cyan]{persona_pair('tiramisu')}  Tiramisu[/bold cyan]  [dim]→[/dim]  "
