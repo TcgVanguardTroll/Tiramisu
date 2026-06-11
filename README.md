@@ -8,7 +8,7 @@
 
 A personal multi-agent dev system. A crew of pastry-named pets that scope your work, write code, review changes, draft commit messages, and learn your preferences over time. Runs as a CLI, integrates with git via hooks. No IDE plugin required.
 
-MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 95-test suite across 6 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 6-layer steering composition, the memory layer + schema migrations, and the source-config loader. Runs in seconds with no API calls (Anthropic client is mocked).
+MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 108-test suite across 7 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 6-layer steering composition, the memory layer + schema migrations, and the source-config loader. Runs in seconds with no API calls (Anthropic client is mocked).
 
 ## The Crew
 
@@ -276,7 +276,10 @@ tiramisu/
 │   ├── pr_review.py         # `t pr` -- branch review, --post creates inline PR comments
 │   ├── start_task.py        # `t task` -- Croissant scope session
 │   ├── reflect.py           # `t reflect` -- Madeleine's insights
-│   ├── research.py          # `t research` -- Cannoli's autonomous research
+│   ├── research.py          # `t research` -- Cannoli's watched sources + CLI
+│   ├── research_discovery.py# GitHub / HN / arxiv scouting + paper grab
+│   ├── research_library.py  # Library ingestion + PDF auto-split + scout
+│   ├── research_common.py   # Shared research config + HTTP plumbing
 │   ├── learn.py             # `t learn` -- preference management
 │   ├── install_hooks.py     # `t hook`
 │   ├── memory.py            # learnings.db layer
@@ -291,7 +294,7 @@ tiramisu/
 │   ├── RESEARCH.md          # Autonomous research subsystem
 │   ├── UI.md                # Render modes + spinners + REPL keys
 │   └── DEVELOPING.md        # Contributor / agent-developer pointer
-├── tests/                   # 95-test pytest suite (safety, router, steering, memory)
+├── tests/                   # 108-test pytest suite (safety, router, steering, memory)
 ├── .github/workflows/       # CI: 3 OS x 2 Python matrix on every push / PR
 ├── code-style.md            # Per-language style (Java / Python / Rust / TypeScript)
 ├── engineering-principles.md# Distilled from Bloch / Martin / Ousterhout / Kleppmann / Nygard

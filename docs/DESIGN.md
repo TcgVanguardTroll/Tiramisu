@@ -15,16 +15,16 @@ layers and logs every API call to the same local database.
 
 ```mermaid
 flowchart TD
-    U[User] -->|"tiramisu &lt;anything&gt;"| D[dispatch.py<br/>REPL + Haiku router]
+    U[User] -->|"tiramisu &lt;anything&gt;"| D[dispatch.py<br/>REPL + exact-word fast path<br/>+ Haiku router]
     U -->|"t &lt;command&gt;"| T[t / t.bat dispatcher]
     D -->|picks one route| T
 
     T --> TASK["start_task.py · Croissant<br/>scope + acceptance criteria"]
-    T --> IMPL["implement.py · Éclair<br/>agentic code writer"]
+    T --> IMPL["implement.py · Éclair<br/>agentic code writer<br/>+ context trimming"]
     T --> CHAT["chat.py · Tiramisu<br/>conversational tools"]
     T --> SCAN["scan.py / pr_review.py · Cookie<br/>full-read + branch review"]
     T --> REFL["reflect.py · Madeleine<br/>insights from data"]
-    T --> RES["research.py · Cannoli<br/>external sources + library"]
+    T --> RES["research.py · Cannoli<br/>watched sources + CLI<br/>(research_discovery / research_library /<br/>research_common)"]
     T --> LEARN["learn.py<br/>preference management"]
 
     subgraph SHARED["Shared services (scripts/)"]
@@ -41,6 +41,48 @@ flowchart TD
     TASK & SCAN & LEARN --> MEM
     MEM --> DB[("~/.tiramisu/learnings.db")]
 ```
+
+---
+
+## Routing pipeline
+
+`tiramisu <anything>` resolves to a `t <command>` in up to three steps —
+cheapest first, the LLM only as a last resort:
+
+```mermaid
+flowchart TD
+    IN["user input"] --> EX{exact command word?<br/>(scan / pr / review / …)}
+    EX -->|yes| GO([run t &lt;cmd&gt; -- no API call])
+    EX -->|no| LLM["FAST_MODEL router<br/>(one word out, temperature 0)"]
+    LLM -->|known route| ARG{cmd == scan and a real<br/>path appears in the input?}
+    LLM -->|unknown / API error| FB([fall back to t task])
+    ARG -->|yes| GOP([run t scan &lt;path&gt;])
+    ARG -->|no| GO2([run t &lt;cmd&gt;])
+```
+
+Path forwarding is deliberately conservative: only a token that actually
+exists on disk is passed through to `t scan` — natural language never
+becomes a CLI argument.
+
+---
+
+## Context management — Éclair's loop
+
+A `t implement` run can take up to 50 tool iterations, each adding tool
+results (file reads up to 30K chars). `implement.trim_tool_history` keeps
+the conversation under a total budget:
+
+- Over budget → the **oldest** tool-result contents are replaced with a
+  short elision note in **one batch**; the most recent
+  `KEEP_RECENT_TOOL_ROUNDS` rounds are never touched.
+- Only the `content` string is replaced — message structure and
+  `tool_use_id` pairing stay intact, so the API's tool rules still hold.
+- Batching matters for cost: eliding one round per iteration would move
+  the first changed byte forward every call and invalidate the prompt
+  cache each time; a batch elision invalidates it once per overflow.
+- Éclair can always re-read an elided file — the tools are still there.
+
+Pinned by `tests/test_context_trim.py`.
 
 ---
 
@@ -153,6 +195,7 @@ erDiagram
         int cache_create_tokens
         int cache_read_tokens
         real cost_usd
+        text repo_path
     }
     schema_migrations {
         int version PK
@@ -180,6 +223,23 @@ flowchart LR
     REFL -->|proposed edits| Dev([you])
     Dev -->|apply by hand| PERS[agents/*.md]
     PERS --> ST
+```
+
+---
+
+## Research subsystem layout
+
+Cannoli's subsystem is four modules with a strict, cycle-free import
+hierarchy. `research.py` stays the single CLI entry point (`t research …`).
+
+```mermaid
+flowchart BT
+    COMMON["research_common.py<br/>shared config + _fetch / _ssl_context<br/>(leaf -- imports no research module)"]
+    DISC["research_discovery.py<br/>GitHub / HN / arxiv scouting + grab"] --> COMMON
+    LIB["research_library.py<br/>library ingest + PDF split + scout"] --> COMMON
+    R["research.py<br/>watched sources + findings + CLI"] --> COMMON
+    R --> DISC
+    R --> LIB
 ```
 
 ---
