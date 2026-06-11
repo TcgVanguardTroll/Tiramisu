@@ -5,7 +5,7 @@ name: tests
 # no real Anthropic API calls happen and no API key is required.
 #
 # Matrix shape: 3 OS x 2 Python = 6 cells.
-# 91 tests; full run takes ~10s per cell so the whole matrix is ~60s of compute.
+# 95 tests; full run takes ~10s per cell so the whole matrix is ~60s of compute.
 
 on:
   push:

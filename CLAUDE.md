@@ -99,7 +99,7 @@ tiramisu/
 │   ├── UI.md                     Render modes, spinners, REPL keys
 │   ├── DEVELOPING.md             Pointer for contributors / AI agents working on this repo
 │   └── INVARIANTS.md             The rules the test suite enforces (read before touching safety/schema)
-├── tests/                        91-test pytest suite (safety, router, steering, memory, sources)
+├── tests/                        95-test pytest suite (safety, router, steering, memory, sources)
 ├── .github/workflows/test.yml    CI matrix: 3 OS x 2 Python on every push/PR
 ├── code-style.md                 Per-language style rules (Java/Python/Rust/TS)
 ├── engineering-principles.md     Universal design rules (Bloch/Martin/Ousterhout/etc.)
@@ -239,7 +239,7 @@ If asked to do any of these, raise it before implementing:
 
 ## 8. Testing posture
 
-Tiramisu has a **91-test pytest suite** in `tests/` covering safety
+Tiramisu has a **95-test pytest suite** in `tests/` covering safety
 invariants, router behavior, persona uniqueness, steering composition
 order, memory CRUD + schema migrations, and research source config.
 Runs in ~10s with no API calls. CI gates every PR across 3 OS × 2 Python.
