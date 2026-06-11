@@ -36,7 +36,7 @@ if hasattr(sys.stderr, "reconfigure"):
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from llm import _client, DEFAULT_MODEL, _log_api_usage
+from llm import _client, DEFAULT_MODEL, _log_api_usage, cost_of
 from steering import load_steering
 import memory
 
@@ -474,9 +474,21 @@ def trim_tool_history(messages) -> int:
     return elided
 
 
-def run_agent(initial_messages, system, state: AgentState, max_iterations=50):
+# ----- run budget -----
+
+# Estimated USD cap for one `t implement` run. Eclair is the only agent
+# that runs autonomously for up to 50 iterations, so iteration count alone
+# is a weak guardrail -- a run that keeps re-reading big files can cost a
+# lot in few iterations. When the running estimate crosses the budget the
+# loop stops cleanly instead of letting the surprise land on the invoice.
+DEFAULT_BUDGET_USD = 5.00
+
+
+def run_agent(initial_messages, system, state: AgentState, max_iterations=50,
+              budget_usd: float = DEFAULT_BUDGET_USD):
     client = _client()
     messages = list(initial_messages)
+    spent_usd = 0.0
 
     # Cache the composed system prompt (same pattern as llm.py). Every
     # iteration re-sends tools + system, so the breakpoint makes each
@@ -488,7 +500,7 @@ def run_agent(initial_messages, system, state: AgentState, max_iterations=50):
 
     for iteration in range(1, max_iterations + 1):
         print(f"\n{'-' * 60}")
-        print(f"  Iteration {iteration}")
+        print(f"  Iteration {iteration}  (~${spent_usd:.2f} spent)")
         print('-' * 60)
 
         with client.messages.stream(
@@ -504,6 +516,7 @@ def run_agent(initial_messages, system, state: AgentState, max_iterations=50):
             print()
             final = stream.get_final_message()
         _log_api_usage(final.usage, DEFAULT_MODEL)
+        spent_usd += cost_of(final.usage, DEFAULT_MODEL)
 
         # Collect tool calls
         tool_uses = [b for b in final.content if b.type == "tool_use"]
@@ -536,6 +549,15 @@ def run_agent(initial_messages, system, state: AgentState, max_iterations=50):
         if state.done_summary is not None:
             break
 
+        # Budget gate: checked AFTER appending results so the transcript
+        # stays consistent if the user re-runs with a higher budget.
+        if budget_usd and spent_usd >= budget_usd:
+            print(f"\n  [budget] ~${spent_usd:.2f} spent >= ${budget_usd:.2f} cap. "
+                  f"Stopping before the next iteration.")
+            print(f"  Re-run with --budget {budget_usd * 2:.0f} to continue, "
+                  f"or review the partial work with `git diff`.")
+            break
+
     return state.done_summary
 
 
@@ -552,6 +574,9 @@ def parse_args():
                    help="Skip ALL confirmations including shell. Use with care.")
     p.add_argument("--max", type=int, default=50,
                    help="Max iterations (default 50).")
+    p.add_argument("--budget", type=float, default=DEFAULT_BUDGET_USD,
+                   help=f"Estimated USD cap for this run (default "
+                        f"{DEFAULT_BUDGET_USD:.2f}; 0 disables).")
     return p.parse_args()
 
 
@@ -607,6 +632,7 @@ def main():
         system=system,
         state=state,
         max_iterations=args.max,
+        budget_usd=args.budget,
     )
 
     # Final report
