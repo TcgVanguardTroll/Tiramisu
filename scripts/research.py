@@ -78,7 +78,7 @@ DEFAULT_SOURCES = [
     },
     {
         "name":  "Python release notes",
-        "url":   "https://docs.python.org/3/whatsnew/3.13.html",
+        "url":   "https://docs.python.org/3/whatsnew/3.14.html",
         "focus": "Deprecations, new idioms relevant to code-style.md (pathlib, "
                  "typing, async, error handling).",
     },
