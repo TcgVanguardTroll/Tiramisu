@@ -7,9 +7,10 @@ whenever you launch `tiramisu` and her last scan was more than 7 days ago.
 This document is the deep dive. The README has the one-paragraph version.
 
 > **Critical safety property:** Findings are *proposed*, never auto-applied.
-> The user copies any worthwhile suggestions into the steering files by hand.
-> This is the autonomous version of the "learn before mutate" rule in
-> [CLAUDE.md](../CLAUDE.md) §4.3.
+> The user adopts suggestions either by hand or one keystroke at a time via
+> `t research apply` — every edit is shown and individually confirmed (y/N,
+> default no). This is the autonomous version of the "learn before mutate"
+> rule in [CLAUDE.md](../CLAUDE.md) §4.3.
 
 ---
 
@@ -38,6 +39,7 @@ When findings are waiting, the next `tiramisu` invocation surfaces a one-liner:
 |---|---|
 | `t research` (no args) | Show + mark-read the newest unread file (findings or candidates) |
 | `t research run` | Scan watched sources now for new deltas |
+| `t research apply [file]` | Walk the latest (or given) findings file; adopt each proposal with a y/N |
 | `t research discover` | Scout GitHub Trending + HN + arxiv for new candidate sources |
 | `t research ingest <path>` | Manually ingest a PDF / `.md` / `.txt` / `.rst` file or directory |
 | `t research grab <arxiv-id>` | Download an arxiv paper into your library (auto-ingests on next run) |
@@ -181,11 +183,61 @@ If a target file is a cloud-only placeholder (common with iCloud Drive on Window
 
 ---
 
+## Closing the loop: `t research apply`
+
+`t research apply` turns "copy-paste what's worth keeping" into one
+keystroke per proposal, without giving up the human gate:
+
+```
+🐶 Cannoli — applying findings from findings_2026-06-11.md
+   3 actionable proposal(s), 0 already applied.
+
+--- Anthropic API release notes ---
+**Relevance:** 4/5 ...
+
+Apply to steering/code-style.md? [y/N] y
+  ✓ applied to steering/code-style.md
+```
+
+What it can and cannot do (pinned by `tests/test_research_apply.py`):
+
+- **Edits** may only touch the three shared steering files. `code-style.md`
+  edits are inserted *inside* the matching language section (or Universal
+  Preferences) so `steering.py`'s section filter still composes them.
+- **New docs** — when a finding deserves its own document, Cannoli proposes
+  `steering/learned/<name>.md`. Accepted docs are created there and
+  composed into every agent prompt by `steering.py` (after communication
+  style, before user preferences and repo overrides, so the more specific
+  layers still win).
+- **Persona files are never touched.** Proposals targeting `agents/*.md`
+  are skipped with a note — personas stay hand-edited (CLAUDE.md §4.1).
+- Confirmation defaults to **no**; empty input, EOF, and Ctrl+C all decline.
+- An `.applied` sidecar next to the findings file records accepted titles,
+  so re-running never double-applies.
+- Every accepted change is a normal file edit in the Tiramisu repo —
+  review with `git diff`, revert with git like anything else.
+
+## Scheduling
+
+Two mechanisms keep Cannoli current; both end at the same human gate:
+
+1. **Piggyback (always on):** every `tiramisu` launch checks the last-run
+   marker and kicks a detached background `research all` if it's >7 days old.
+2. **OS scheduler (installed by setup):** `setup.sh` registers a cron entry,
+   `setup.ps1` a Windows Scheduled Task — both run
+   `t research all --quiet` Mondays 09:00, so research stays fresh even
+   during weeks you don't open the CLI. Registration is idempotent and
+   fail-soft; removal one-liners are in the setup script comments:
+   - macOS/Linux: `crontab -l | grep -v 'tiramisu-research' | crontab -`
+   - Windows: `Unregister-ScheduledTask -TaskName "Tiramisu Research" -Confirm:$false`
+
+---
+
 ## Architecture invariants for this subsystem
 
 These match the broader rules in [CLAUDE.md](../CLAUDE.md) but are restated here because the research surface area is large:
 
-1. **Findings are proposals, never auto-applied.** Every output file is meant for a human to read and selectively act on. The library hash cache prevents wasted work, not approval.
+1. **Findings are proposals, never auto-applied.** Every output file is meant for a human to read and selectively act on — `t research apply` just compresses "act on" to a per-edit y/N. The library hash cache prevents wasted work, not approval.
 2. **Background runs never block user commands.** The dispatcher spawns research detached. If it fails, the user's main command still proceeds.
 3. **Token usage is captured** in `learnings.db.token_usage` like every other API call. Run `t reflect` to see how much research is costing you.
 4. **No persistent network state.** Each run fetches fresh content; the only state kept is the diff cache and findings files.
