@@ -51,13 +51,13 @@ cheapest first, the LLM only as a last resort:
 
 ```mermaid
 flowchart TD
-    IN["user input"] --> EX{exact command word?<br/>(scan / pr / review / …)}
-    EX -->|yes| GO([run t &lt;cmd&gt; -- no API call])
+    IN["user input"] --> EX{"exact command word?<br/>(scan / pr / review / …)"}
+    EX -->|yes| GO(["run t &lt;cmd&gt; — no API call"])
     EX -->|no| LLM["FAST_MODEL router<br/>(one word out, temperature 0)"]
-    LLM -->|known route| ARG{cmd == scan and a real<br/>path appears in the input?}
-    LLM -->|unknown / API error| FB([fall back to t task])
-    ARG -->|yes| GOP([run t scan &lt;path&gt;])
-    ARG -->|no| GO2([run t &lt;cmd&gt;])
+    LLM -->|known route| ARG{"cmd is scan and a real<br/>path appears in the input?"}
+    LLM -->|"unknown / API error"| FB(["fall back to t task"])
+    ARG -->|yes| GOP(["run t scan &lt;path&gt;"])
+    ARG -->|no| GO2(["run t &lt;cmd&gt;"])
 ```
 
 Path forwarding is deliberately conservative: only a token that actually
