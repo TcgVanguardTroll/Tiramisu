@@ -359,6 +359,32 @@ def test_log_token_usage_persists(tmp_tiramisu_home):
     assert row[5] == pytest.approx(0.0023)
 
 
+def test_token_usage_has_repo_path_column(tmp_tiramisu_home):
+    """Migration v3 adds token_usage.repo_path so `t reflect` can break
+    down cost per project. Old rows are NULL; new rows record the repo."""
+    import memory
+    memory.log_token_usage(
+        script="implement", model="claude-sonnet-4-6",
+        input_tokens=10, output_tokens=5, repo_path="/some/repo",
+    )
+    with memory._connection() as conn:
+        row = conn.execute(
+            "SELECT repo_path FROM token_usage ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+    assert row[0] == "/some/repo"
+
+
+def test_token_usage_repo_path_defaults_to_null(tmp_tiramisu_home):
+    """Callers that don't pass repo_path must keep working (fail-soft)."""
+    import memory
+    memory.log_token_usage("dispatch", "claude-haiku-4-5", 1, 1)
+    with memory._connection() as conn:
+        row = conn.execute(
+            "SELECT repo_path FROM token_usage ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+    assert row[0] is None
+
+
 # --------------------------------------------------------------------------
 # stats_since(): the aggregate shape consumed by `t reflect`
 # --------------------------------------------------------------------------

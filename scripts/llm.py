@@ -61,7 +61,8 @@ def _log_api_usage(usage, model):
 
         from memory import log_token_usage
         log_token_usage(script, model, in_tok, out_tok,
-                        cache_write_tok, cache_read_tok, cost)
+                        cache_write_tok, cache_read_tok, cost,
+                        repo_path=os.getcwd())
     except Exception as e:
         print(f"[tiramisu] usage log warning: {type(e).__name__}: {e}", file=sys.stderr)
 
