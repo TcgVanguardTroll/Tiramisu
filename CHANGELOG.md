@@ -4,6 +4,27 @@ All notable changes to Tiramisu. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are tagged on
 `master`.
 
+## [1.1.0] — 2026-06-11
+
+The research loop closes: Cannoli's findings can now be adopted with one
+keystroke per proposal, and research runs on an OS schedule instead of
+only when you happen to open the CLI. Still learn-before-mutate — nothing
+changes any prompt without an explicit per-edit y/N from the user.
+
+### Added
+- **`t research apply [file]`** — walks the latest findings file and asks
+  y/N per proposal. Edits are sandboxed to the three shared steering files;
+  accepted `code-style.md` changes are inserted inside the matching
+  composed section. Persona files are never touched. An `.applied` sidecar
+  prevents double-application. 30 safety/behavior tests, written first.
+- **`steering/learned/`** — Cannoli can propose whole new steering docs;
+  accepted ones are created here and composed into every agent prompt
+  (after communication style, before preferences and repo overrides).
+  New `include_learned` toggle in `load_steering()`.
+- **Weekly OS-scheduled research** — `setup.sh` registers a cron entry,
+  `setup.ps1` a Windows Scheduled Task (Mondays 09:00, idempotent,
+  fail-soft), so sources are scanned even in weeks the CLI isn't opened.
+
 ## [1.0.0] — 2026-06-11
 
 First tagged release. The full crew workflow is live: scope → write →

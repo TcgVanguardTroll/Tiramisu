@@ -90,6 +90,7 @@ tiramisu/
 │   ├── pr_review.py              `t pr` — branch review + `--post` inline comments
 │   ├── start_task.py             `t task` — Croissant scope session
 │   ├── reflect.py                `t reflect` — Madeleine's insights
+│   ├── research_apply.py         `t research apply` — adopt findings into steering (y/N each)
 │   ├── learn.py                  `t learn` — preference management
 │   ├── install_hooks.py          `t hook` — install hooks in a repo
 │   ├── brainstorm.py             `t brainstorm` — Mochi stress-tests ideas
@@ -105,12 +106,13 @@ tiramisu/
 │   ├── UI.md                     Render modes, spinners, REPL keys
 │   ├── DEVELOPING.md             Pointer for contributors / AI agents working on this repo
 │   └── INVARIANTS.md             The rules the test suite enforces (read before touching safety/schema)
-├── tests/                        142-test pytest suite (safety, router, steering, memory, sources)
+├── tests/                        175-test pytest suite (safety, router, steering, memory, sources)
 ├── .github/workflows/test.yml    CI matrix: 3 OS x 2 Python on every push/PR
 ├── steering/                     Shared steering docs (composed into every prompt)
 │   ├── code-style.md             Per-language style rules (Java/Python/Rust/TS)
 │   ├── engineering-principles.md Universal design rules (Bloch/Martin/Ousterhout/etc.)
-│   └── communication-style.md    Tone, commit format, PR template
+│   ├── communication-style.md    Tone, commit format, PR template
+│   └── learned/                  Docs adopted from research via `t research apply` (user-gated)
 ├── README.md                     User-facing entry point
 ├── CLAUDE.md                     This file
 ├── t.bat / tiramisu.bat          Windows dispatchers (CRLF, pinned)
@@ -138,9 +140,12 @@ applies to all agents, put it in `steering/engineering-principles.md`. If it app
 only to Cookie, put it in `cookie.md` voice section.
 
 ### 4.3 — Learn before mutate
-Agents must NEVER auto-rewrite their own prompts. `t reflect` **proposes**
-edits; the user applies them by hand. Anything that silently changes agent
-behavior based on accumulated data is a bug, not a feature.
+Agents must NEVER auto-rewrite their own prompts. `t reflect` and
+`t research` **propose** edits; the user applies them — by hand, or one
+explicit y/N at a time via `t research apply` (which is sandboxed to the
+shared steering files and `steering/learned/`, never personas — see
+`docs/INVARIANTS.md` §9). Anything that silently changes agent behavior
+based on accumulated data is a bug, not a feature.
 
 ### 4.4 — One agent per script, narrow scope
 Each script in `scripts/` corresponds to exactly one agent's job. Don't
@@ -197,8 +202,10 @@ one OS, errors on the other.
 1. Decide what scope it has: universal, per-language, or agent-specific.
 2. Edit the appropriate file: `steering/engineering-principles.md` for universal,
    `steering/code-style.md` for per-language, the persona file for agent-specific.
-3. Do not create new files in `steering/` without coordinating with
-   `scripts/steering.py` — it loads a fixed set.
+3. Do not create new files at the top level of `steering/` without
+   coordinating with `scripts/steering.py` — it loads a fixed set.
+   (`steering/learned/*.md` is the exception: that directory is composed
+   dynamically; files land there via `t research apply`.)
 
 ### Add a tool to an agent that has tool use (Éclair / Tiramisu chat)
 1. Add the tool schema dict to the script's `TOOLS` list.
@@ -246,7 +253,7 @@ If asked to do any of these, raise it before implementing:
 
 ## 8. Testing posture
 
-Tiramisu has a **142-test pytest suite** in `tests/` covering safety
+Tiramisu has a **175-test pytest suite** in `tests/` covering safety
 invariants, router behavior, persona uniqueness, steering composition
 order, memory CRUD + schema migrations, and research source config.
 Runs in ~10s with no API calls. CI gates every PR across 3 OS × 2 Python.

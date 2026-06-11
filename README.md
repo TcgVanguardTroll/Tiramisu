@@ -8,7 +8,7 @@
 
 A personal multi-agent dev system. A crew of pastry-named pets that scope your work, write code, review changes, draft commit messages, and learn your preferences over time. Runs as a CLI, integrates with git via hooks. No IDE plugin required.
 
-MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 142-test suite across 10 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 6-layer steering composition, the memory layer + schema migrations, and the source-config loader. Runs in seconds with no API calls (Anthropic client is mocked).
+MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 175-test suite across 10 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 7-layer steering composition, the memory layer + schema migrations, and the source-config loader. Runs in seconds with no API calls (Anthropic client is mocked).
 
 ## The Crew
 
@@ -260,6 +260,7 @@ Weekly:
 t reflect          # see patterns; get specific preference + prompt-edit proposals
 t learn "..."      # teach a new preference based on what you noticed
 t research         # see what Cannoli scouted from the world this week
+t research apply   # adopt her proposals into the steering docs, y/N each
 ```
 
 ---
@@ -282,6 +283,7 @@ tiramisu/
 │   ├── research_discovery.py# GitHub / HN / arxiv scouting + paper grab
 │   ├── research_library.py  # Library ingestion + PDF auto-split + scout
 │   ├── research_common.py   # Shared research config + HTTP plumbing
+│   ├── research_apply.py    # `t research apply` -- gated adoption of findings
 │   ├── learn.py             # `t learn` -- preference management
 │   ├── install_hooks.py     # `t hook`
 │   ├── memory.py            # learnings.db layer
@@ -296,7 +298,7 @@ tiramisu/
 │   ├── RESEARCH.md          # Autonomous research subsystem
 │   ├── UI.md                # Render modes + spinners + REPL keys
 │   └── DEVELOPING.md        # Contributor / agent-developer pointer
-├── tests/                   # 142-test pytest suite (safety, router, steering, memory)
+├── tests/                   # 175-test pytest suite (safety, router, steering, memory)
 ├── .github/workflows/       # CI: 3 OS x 2 Python matrix on every push / PR
 ├── steering/                # Shared steering docs (composed into every agent prompt)
 │   ├── code-style.md        # Per-language style (Java / Python / Rust / TypeScript)
@@ -318,7 +320,7 @@ tiramisu/
 - **Cross-platform** — Windows uses `.bat` dispatchers, macOS/Linux uses extension-less POSIX shell scripts. Both call the same Python.
 - **Local-first** — your data, your preferences, your `learnings.db`. No cloud sync.
 - **Composable steering** — agents share the same source of truth (your codified standards) so they agree on what "good" means.
-- **Learn before mutate** — `t reflect` and Cannoli's research *propose* changes; you decide whether to apply. Agents don't silently rewrite their own prompts.
+- **Learn before mutate** — `t reflect` and Cannoli's research *propose* changes; you decide whether to apply (by hand, or per-edit y/N via `t research apply`). Agents don't silently rewrite their own prompts.
 - **Surgical** — every change traces to a request. No "while I'm here" cleanup.
 
 ---

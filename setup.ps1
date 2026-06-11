@@ -29,10 +29,10 @@ if (-not $python) {
     Write-Host "  Install Python 3.10+ from https://python.org and retry."
     exit 1
 }
-Write-Host "  [1/4] Python: $python" -ForegroundColor Green
+Write-Host "  [1/5] Python: $python" -ForegroundColor Green
 
 # 2. Install dependencies
-Write-Host "  [2/4] Installing dependencies..."
+Write-Host "  [2/5] Installing dependencies..."
 & $python -m pip install --quiet --disable-pip-version-check -r "$INSTALL_DIR\requirements.txt"
 Write-Host "        Done (anthropic, rich, prompt_toolkit)." -ForegroundColor Green
 
@@ -41,10 +41,10 @@ $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
 $needsRestart = $false
 if ($userPath -notlike "*$INSTALL_DIR*") {
     [System.Environment]::SetEnvironmentVariable("PATH", "$userPath;$INSTALL_DIR", "User")
-    Write-Host "  [3/4] Added to user PATH." -ForegroundColor Green
+    Write-Host "  [3/5] Added to user PATH." -ForegroundColor Green
     $needsRestart = $true
 } else {
-    Write-Host "  [3/4] PATH already includes: $INSTALL_DIR" -ForegroundColor Green
+    Write-Host "  [3/5] PATH already includes: $INSTALL_DIR" -ForegroundColor Green
 }
 
 # 4. Ensure .env exists with a key placeholder
@@ -58,16 +58,37 @@ if (-not (Test-Path $envFile)) {
 # Get your key at: https://console.anthropic.com/
 ANTHROPIC_API_KEY=
 "@ | Out-File -Encoding utf8 $envFile
-    Write-Host "  [4/4] Created: $envFile" -ForegroundColor Yellow
+    Write-Host "  [4/5] Created: $envFile" -ForegroundColor Yellow
     $needsKey = $true
 } else {
     $content = Get-Content $envFile -Raw -ErrorAction SilentlyContinue
     if ($content -notmatch "ANTHROPIC_API_KEY=\S") {
-        Write-Host "  [4/4] .env exists but no API key set: $envFile" -ForegroundColor Yellow
+        Write-Host "  [4/5] .env exists but no API key set: $envFile" -ForegroundColor Yellow
         $needsKey = $true
     } else {
-        Write-Host "  [4/4] .env exists with API key." -ForegroundColor Green
+        Write-Host "  [4/5] .env exists with API key." -ForegroundColor Green
     }
+}
+
+# 5. Schedule weekly research (Task Scheduler) -- Cannoli scans sources
+#    Mondays 09:00 even if you don't open tiramisu that week. Findings are
+#    proposals only; nothing is applied without `t research apply` + a y/N.
+#    Remove with:  Unregister-ScheduledTask -TaskName "Tiramisu Research" -Confirm:$false
+$taskName = "Tiramisu Research"
+try {
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+        Write-Host "  [5/5] Weekly research already scheduled (Task Scheduler)." -ForegroundColor Green
+    } else {
+        $action   = New-ScheduledTaskAction -Execute "$INSTALL_DIR\t.bat" -Argument "research all --quiet"
+        $trigger  = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday -At 9am
+        $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable
+        Register-ScheduledTask -TaskName $taskName -Action $action `
+            -Trigger $trigger -Settings $settings | Out-Null
+        Write-Host "  [5/5] Scheduled weekly research: Mondays 09:00 (Task Scheduler)." -ForegroundColor Green
+    }
+} catch {
+    Write-Host "  [5/5] Could not register scheduled task -- research still" -ForegroundColor Yellow
+    Write-Host "        auto-runs in the background when you use tiramisu." -ForegroundColor Yellow
 }
 
 # Summary

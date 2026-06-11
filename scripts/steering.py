@@ -6,7 +6,8 @@ Every agent invocation should build its system prompt from:
   2. steering/engineering-principles.md (universal rules) -- optional
   3. The relevant language sections of steering/code-style.md -- optional, filtered
   4. steering/communication-style.md -- optional (for commit/review tone)
-  5. Active user preferences from learnings.db
+  5. steering/learned/*.md -- docs adopted via `t research apply` (user-approved)
+  6. Active user preferences from learnings.db
 
 The point: each agent gets a 5x stronger system prompt assembled from the
 high-quality steering docs the user already wrote, rather than a generic
@@ -103,6 +104,21 @@ def _code_style_for(languages: list[str] | None, include_universal: bool = True)
     return "\n\n".join(chunks)
 
 
+def _load_learned() -> str:
+    """Concatenate steering/learned/*.md -- docs the user adopted from
+    Cannoli's research via `t research apply`. Sorted for a stable prompt
+    cache. Missing dir (the common case) returns ""."""
+    learned_dir = ROOT / "steering" / "learned"
+    if not learned_dir.is_dir():
+        return ""
+    chunks = [
+        _read(f).strip()
+        for f in sorted(learned_dir.glob("*.md"))
+        if _read(f).strip()
+    ]
+    return "\n\n".join(chunks)
+
+
 def _load_preferences() -> str:
     """Pull active preferences from learnings.db. Fail-soft."""
     try:
@@ -176,6 +192,7 @@ def load_steering(
     include_engineering: bool = True,
     include_communication: bool = False,
     include_universal_style: bool = True,
+    include_learned: bool = True,
     include_preferences: bool = True,
     include_repo_overrides: bool = True,
     cwd: str | Path | None = None,
@@ -190,6 +207,7 @@ def load_steering(
       include_engineering: include engineering-principles.md
       include_communication: include communication-style.md
       include_universal_style: include the "Universal Preferences" section of code-style.md
+      include_learned: include steering/learned/*.md (docs adopted from research)
       include_preferences: append learned preferences from learnings.db
       include_repo_overrides: append per-repo .tiramisu/*.md files (highest priority)
       cwd: directory to search for .tiramisu/ overrides (defaults to process cwd)
@@ -222,7 +240,15 @@ def load_steering(
         if comm:
             parts.append("\n# COMMUNICATION STYLE\n\n" + comm.strip())
 
-    # 5. Active preferences (from learnings.db)
+    # 5. Learned docs (adopted from research via `t research apply`).
+    #    Before preferences and repo overrides so those more specific
+    #    layers still win on conflict.
+    if include_learned:
+        learned = _load_learned()
+        if learned:
+            parts.append("\n# LEARNED FROM RESEARCH (user-approved)\n\n" + learned)
+
+    # 6. Active preferences (from learnings.db)
     if include_preferences:
         prefs = _load_preferences()
         if prefs:
@@ -230,7 +256,7 @@ def load_steering(
                 "\n# USER PREFERENCES (learned over time -- respect these)\n\n" + prefs
             )
 
-    # 6. Per-repo overrides (highest priority -- last in the prompt so they
+    # 7. Per-repo overrides (highest priority -- last in the prompt so they
     #    override anything that came before)
     if include_repo_overrides:
         from pathlib import Path as _Path

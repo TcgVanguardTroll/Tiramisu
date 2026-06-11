@@ -17,6 +17,7 @@ Architecture:
 CLI:
   t research          show the most recent unread findings, mark as read
   t research run      force a research run now (foreground)
+  t research apply    walk the latest findings, apply each accepted edit (y/N)
   t research mute     mark all pending findings as read without showing
   t research list     list all findings files chronologically
 """
@@ -296,6 +297,10 @@ Output format (markdown):
 
 **Proposed update:** the exact file + section to edit, with the proposed
 text in a fenced block. If no actionable update, write "No action recommended."
+Valid targets: `engineering-principles.md`, `code-style.md` (name the language
+section), or `communication-style.md`. If the insight deserves its own doc
+instead, propose `steering/learned/<kebab-name>.md` with the full doc body
+in the fenced block.
 
 Rules:
 - ONLY propose updates that meaningfully improve Tiramisu. Ignore tangential changes.
@@ -585,6 +590,9 @@ def main():
         show_latest()
     elif args.action == "run":
         run_research(quiet=args.quiet)
+    elif args.action == "apply":
+        from research_apply import apply_cli
+        apply_cli(args.rest)
     elif args.action == "discover":
         discover(quiet=args.quiet)
     elif args.action == "ingest":
@@ -627,7 +635,7 @@ def main():
         _sources_subcmd(args.rest)
     else:
         print(f"Unknown action: {args.action!r}")
-        print("Valid: show | run | discover | grab <id|--all> | "
+        print("Valid: show | run | apply [file] | discover | grab <id|--all> | "
               "ingest <path> | scout <path> | show-scout | library | "
               "all | mute | list | sources [...]")
         sys.exit(1)
