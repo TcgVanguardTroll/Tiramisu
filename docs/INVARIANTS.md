@@ -107,8 +107,12 @@ order, and only this order:
 
 ```
   persona  ->  engineering  ->  code-style  ->  communication
-           ->  preferences  ->  repo-overrides
+           ->  learned  ->  preferences  ->  repo-overrides
 ```
+
+(`learned` is `steering/learned/*.md` — docs adopted from research via
+`t research apply`. It sits before preferences and repo overrides so the
+more specific layers still win on conflict.)
 
 Per-repo `.tiramisu/*.md` overrides are last so they win when they
 conflict with anything earlier (this is the documented precedence).
@@ -123,7 +127,8 @@ indent" rule from `code-style.md`.
 
 **Enforced by.** `tests/test_steering.py` —
 `test_steering_section_order`, `test_overrides_come_last`,
-`test_persona_appears_before_engineering`, plus toggle and language-filter
+`test_persona_appears_before_engineering`,
+`test_learned_layer_included_and_ordered`, plus toggle and language-filter
 tests for each layer.
 
 **Lives in.** `scripts/steering.py` — `load_steering()`.
@@ -207,6 +212,33 @@ break CI immediately (this caught the `datetime.utcnow()` bug during
 Phase 2).
 
 **Lives in.** `.github/workflows/test.yml`.
+
+---
+
+## 9. Research-apply sandbox
+
+**Invariant.** `t research apply` may only (a) edit the three shared
+steering files (`engineering-principles.md`, `code-style.md`,
+`communication-style.md`) and (b) create new files inside
+`steering/learned/`. Proposed targets are an allowlist of bare names —
+path-like targets (`../`, absolute, `agents/…`) are rejected, not
+normalized. Persona files are never written. Every application requires
+an explicit per-edit `y`; empty input, EOF, and Ctrl+C decline. The
+`.applied` sidecar makes re-runs idempotent.
+
+**Why it matters.** This is the only surface where LLM-authored text
+flows back into the prompts that steer every agent. Without the sandbox,
+a hallucinated (or prompt-injected, via a fetched web page) "proposed
+update" could rewrite a persona or any file in the repo. The allowlist +
+per-edit confirmation keeps the loop "self-improving with a human gate"
+rather than self-mutating (CLAUDE.md §4.3).
+
+**Enforced by.** `tests/test_research_apply.py` — target-allowlist,
+escape-rejection, learned-dir-confinement, confirmation-default-no, and
+all-no-changes-nothing end-to-end tests.
+
+**Lives in.** `scripts/research_apply.py` — `resolve_edit_target()`,
+`learned_doc_path()`, `_confirm()`.
 
 ---
 

@@ -319,3 +319,79 @@ def test_missing_persona_doesnt_crash(clear_steering_cache):
     )
     # Engineering still present; just no persona section
     assert MARKER_ENGINEERING in composed
+
+
+# --------------------------------------------------------------------------
+# Learned layer (steering/learned/*.md, adopted via `t research apply`)
+# --------------------------------------------------------------------------
+
+MARKER_LEARNED = "# LEARNED FROM RESEARCH"
+
+
+@pytest.fixture
+def fake_steering_root(tmp_path, monkeypatch, clear_steering_cache):
+    """A minimal repo tree with a learned doc, with steering.ROOT pointed
+    at it. _read() resolves paths at call time, so patching ROOT is enough."""
+    import steering
+    root = tmp_path / "fake_tiramisu"
+    (root / "agents").mkdir(parents=True)
+    (root / "agents" / "eclair.md").write_text("# Eclair persona", encoding="utf-8")
+    s = root / "steering"
+    (s / "learned").mkdir(parents=True)
+    (s / "engineering-principles.md").write_text("Keep it simple.", encoding="utf-8")
+    (s / "code-style.md").write_text(
+        "## Python\n- pathlib.\n\n## Universal Preferences\n- early returns.\n",
+        encoding="utf-8",
+    )
+    (s / "communication-style.md").write_text("Be brief.", encoding="utf-8")
+    (s / "learned" / "agent-evals.md").write_text(
+        "# Agent evals\n\nRun evals before shipping prompts.", encoding="utf-8"
+    )
+    monkeypatch.setattr(steering, "ROOT", root)
+    return root
+
+
+def test_learned_layer_included_and_ordered(fake_steering_root, tmp_path):
+    """Learned docs appear AFTER communication style and BEFORE repo
+    overrides, so project-specific rules still win on conflict."""
+    from steering import load_steering
+
+    repo = tmp_path / "fakerepo"
+    (repo / ".tiramisu").mkdir(parents=True)
+    (repo / ".tiramisu" / "style.md").write_text("Tabs.", encoding="utf-8")
+
+    composed = load_steering(
+        agent="eclair",
+        languages=["Python"],
+        include_communication=True,
+        include_preferences=False,
+        cwd=repo,
+    )
+
+    assert "Run evals before shipping prompts." in composed
+    assert composed.index(MARKER_COMMUNICATION) < composed.index(MARKER_LEARNED)
+    assert composed.index(MARKER_LEARNED) < composed.index(MARKER_OVERRIDES)
+
+
+def test_learned_layer_toggle_off(fake_steering_root):
+    from steering import load_steering
+    composed = load_steering(
+        agent="eclair",
+        include_learned=False,
+        include_preferences=False,
+        include_repo_overrides=False,
+    )
+    assert MARKER_LEARNED not in composed
+
+
+def test_no_learned_dir_adds_nothing(fake_steering_root):
+    """An empty/missing learned dir must not add the heading."""
+    import shutil
+    from steering import load_steering
+    shutil.rmtree(fake_steering_root / "steering" / "learned")
+    composed = load_steering(
+        agent="eclair",
+        include_preferences=False,
+        include_repo_overrides=False,
+    )
+    assert MARKER_LEARNED not in composed
