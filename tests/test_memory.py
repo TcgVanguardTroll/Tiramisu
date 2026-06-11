@@ -386,6 +386,38 @@ def test_token_usage_repo_path_defaults_to_null(tmp_tiramisu_home):
 
 
 # --------------------------------------------------------------------------
+# Routes: the router-audit log (migration v4)
+# --------------------------------------------------------------------------
+
+def test_log_route_persists(tmp_tiramisu_home):
+    """`t reflect` audits the NL router from the routes table."""
+    import memory
+    memory.log_route("scan the scripts folder", "scan", "llm")
+    with memory._connection() as conn:
+        row = conn.execute(
+            "SELECT input, command, via FROM routes ORDER BY ts DESC LIMIT 1"
+        ).fetchone()
+    assert row == ("scan the scripts folder", "scan", "llm")
+
+
+def test_log_route_truncates_long_input(tmp_tiramisu_home):
+    import memory
+    memory.log_route("x" * 999, "task", "fallback")
+    with memory._connection() as conn:
+        row = conn.execute("SELECT input FROM routes").fetchone()
+    assert len(row[0]) == 200
+
+
+def test_stats_since_includes_routing(tmp_tiramisu_home):
+    import memory
+    memory.log_route("scan", "scan", "fast")
+    memory.log_route("do a thing", "task", "fallback")
+    stats = memory.stats_since(days=1)
+    assert stats["routing"]["by_via"] == {"fast": 1, "fallback": 1}
+    assert stats["routing"]["fallbacks"] == ["do a thing"]
+
+
+# --------------------------------------------------------------------------
 # stats_since(): the aggregate shape consumed by `t reflect`
 # --------------------------------------------------------------------------
 

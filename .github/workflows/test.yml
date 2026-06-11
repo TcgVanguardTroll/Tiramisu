@@ -5,7 +5,7 @@ name: tests
 # no real Anthropic API calls happen and no API key is required.
 #
 # Matrix shape: 3 OS x 2 Python = 6 cells.
-# 108 tests; full run takes ~10s per cell so the whole matrix is ~60s of compute.
+# 142 tests; full run takes ~10s per cell so the whole matrix is ~60s of compute.
 
 on:
   push:
@@ -66,3 +66,16 @@ jobs:
         # bug in Phase 2 -- keeps the codebase honest about deprecations.
         run: |
           python -m pytest tests/ -v --tb=short -W error::DeprecationWarning
+
+      # The pytest suite exercises the Python layer; nothing above executes
+      # the actual shell dispatchers. CLAUDE.md 4.9's known failure mode is
+      # "command works on one OS, errors on the other" -- usually a missing
+      # case in t.bat vs t, or a CRLF/LF regression. One `help` invocation
+      # per OS catches that class for pennies.
+      - name: Dispatcher smoke test (POSIX)
+        if: runner.os != 'Windows'
+        run: ./t help
+      - name: Dispatcher smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: t.bat help

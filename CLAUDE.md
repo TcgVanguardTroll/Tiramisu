@@ -34,10 +34,12 @@ User types `tiramisu …`
       v
 +----------------+    routes to    +---------------------------+
 |  dispatch.py   |--------------->|  one of: t task / implement |
-|  (REPL +       |                |    scan / review / pr /     |
-|   router via   |                |    learn / reflect / chat   |
-|   Haiku)       |                +-------------+---------------+
-+----------------+                              |
+|  (REPL +       |                |   scan / review / pr /      |
+|   fast path +  |                |   learn / reflect / chat /  |
+|   router via   |                |   research / brainstorm /   |
+|   Haiku)       |                |   onboard                   |
++----------------+                +-------------+---------------+
+                                                |
                                                 v
                                   +-----------------------------+
                                   |  scripts/<thing>.py or      |
@@ -72,7 +74,9 @@ tiramisu/
 │   ├── eclair-standards.md       Éclair-specific coding standards
 │   ├── madeleine.md              reflection / insights keeper
 │   ├── tiramisu.md               orchestrator (the conversational layer)
-│   ├── brioche.md cannoli.md mochi.md   planned agents
+│   ├── cannoli.md                researcher
+│   ├── mochi.md                  brainstormer
+│   ├── brioche.md                agent creator
 │   └── README.md                 meta: how to write a Tiramisu persona
 ├── hooks/                        Git hooks installed by `t hook`
 │   ├── cookie_review.py          pre-commit
@@ -88,6 +92,8 @@ tiramisu/
 │   ├── reflect.py                `t reflect` — Madeleine's insights
 │   ├── learn.py                  `t learn` — preference management
 │   ├── install_hooks.py          `t hook` — install hooks in a repo
+│   ├── brainstorm.py             `t brainstorm` — Mochi stress-tests ideas
+│   ├── onboard.py                `t onboard` — Brioche drafts new personas
 │   ├── memory.py                 SQLite layer (read/write learnings.db)
 │   ├── steering.py               System-prompt composition
 │   ├── personas.py               Emoji + color per agent
@@ -99,7 +105,7 @@ tiramisu/
 │   ├── UI.md                     Render modes, spinners, REPL keys
 │   ├── DEVELOPING.md             Pointer for contributors / AI agents working on this repo
 │   └── INVARIANTS.md             The rules the test suite enforces (read before touching safety/schema)
-├── tests/                        108-test pytest suite (safety, router, steering, memory, sources)
+├── tests/                        142-test pytest suite (safety, router, steering, memory, sources)
 ├── .github/workflows/test.yml    CI matrix: 3 OS x 2 Python on every push/PR
 ├── steering/                     Shared steering docs (composed into every prompt)
 │   ├── code-style.md             Per-language style rules (Java/Python/Rust/TS)
@@ -185,7 +191,7 @@ one OS, errors on the other.
 2. Add to `scripts/personas.py` — pet + pastry emoji + color.
 3. Add the row to the README crew table.
 4. If the agent has a CLI surface, follow "Add a new `t <command>`" above.
-5. Mark as "planned — not yet wired into the t CLI" if you haven't built the CLI yet (see `cannoli.md`).
+5. Mark as "planned — not yet wired into the t CLI" if you haven't built the CLI yet.
 
 ### Add a new steering layer
 1. Decide what scope it has: universal, per-language, or agent-specific.
@@ -240,7 +246,7 @@ If asked to do any of these, raise it before implementing:
 
 ## 8. Testing posture
 
-Tiramisu has a **108-test pytest suite** in `tests/` covering safety
+Tiramisu has a **142-test pytest suite** in `tests/` covering safety
 invariants, router behavior, persona uniqueness, steering composition
 order, memory CRUD + schema migrations, and research source config.
 Runs in ~10s with no API calls. CI gates every PR across 3 OS × 2 Python.

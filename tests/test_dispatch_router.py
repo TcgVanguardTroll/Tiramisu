@@ -166,6 +166,42 @@ def test_router_multiword_input_still_uses_llm(mock_invoke):
 
 
 # --------------------------------------------------------------------------
+# route_ex(): the via channel feeding the router audit
+# --------------------------------------------------------------------------
+
+def test_route_ex_reports_fast(monkeypatch):
+    import llm
+    import dispatch
+    monkeypatch.setattr(llm, "invoke", lambda *a, **k: 1 / 0)
+    monkeypatch.setattr(dispatch, "invoke", lambda *a, **k: 1 / 0)
+    assert dispatch.route_ex("scan") == ("scan", "fast")
+
+
+def test_route_ex_reports_llm(mock_invoke):
+    from dispatch import route_ex
+    mock_invoke.set("implement")
+    assert route_ex("add a button") == ("implement", "llm")
+
+
+def test_route_ex_reports_fallback(mock_invoke):
+    from dispatch import route_ex
+    mock_invoke.set("xyzgibberish")
+    assert route_ex("anything") == ("task", "fallback")
+
+
+def test_route_ex_reports_error(monkeypatch):
+    import llm
+    import dispatch
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("API down")
+
+    monkeypatch.setattr(llm, "invoke", boom)
+    monkeypatch.setattr(dispatch, "invoke", boom)
+    assert dispatch.route_ex("anything") == ("task", "error")
+
+
+# --------------------------------------------------------------------------
 # _extract_path_arg(): forwarding real paths to `t scan`
 # --------------------------------------------------------------------------
 

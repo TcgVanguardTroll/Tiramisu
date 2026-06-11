@@ -48,6 +48,21 @@ def _calc_cost(model, in_tok, out_tok, cache_write_tok=0, cache_read_tok=0):
     ) / 1_000_000
 
 
+def cost_of(usage, model: str) -> float:
+    """Best-effort USD cost of one response's usage object.
+
+    Public wrapper around _calc_cost for callers (e.g. implement's run
+    budget) that need a running total without duplicating the rate table.
+    """
+    return _calc_cost(
+        model,
+        getattr(usage, "input_tokens", 0) or 0,
+        getattr(usage, "output_tokens", 0) or 0,
+        getattr(usage, "cache_creation_input_tokens", 0) or 0,
+        getattr(usage, "cache_read_input_tokens", 0) or 0,
+    )
+
+
 def _log_api_usage(usage, model):
     """Fire-and-forget usage capture. Never raises."""
     try:

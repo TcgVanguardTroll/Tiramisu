@@ -140,6 +140,25 @@ MIGRATIONS = [
         # before this migration" -- old rows stay aggregate-only.
         "ALTER TABLE token_usage ADD COLUMN repo_path TEXT",
     ),
+    (
+        4,
+        "Add routes table so reflect can audit the NL router",
+        # Every `tiramisu <text>` routing decision lands here: the input,
+        # the command chosen, and how it was chosen (fast/llm/fallback/
+        # error). Reviews and drafts already feed the learning loop;
+        # misroutes were the one signal that vanished. `t reflect` uses
+        # the fallback/error rate to propose router-prompt example edits.
+        """
+        CREATE TABLE IF NOT EXISTS routes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT DEFAULT CURRENT_TIMESTAMP,
+            input TEXT,
+            command TEXT,
+            via TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_routes_ts ON routes(ts);
+        """,
+    ),
 ]
 
 
@@ -331,6 +350,16 @@ def log_token_usage(script: str, model: str, input_tokens: int, output_tokens: i
 
 
 @_safe
+def log_route(user_input: str, command: str, via: str) -> None:
+    """Record one NL routing decision. via: fast | llm | fallback | error."""
+    with _connection() as conn:
+        conn.execute(
+            "INSERT INTO routes (input, command, via) VALUES (?, ?, ?)",
+            (user_input[:200], command, via),
+        )
+
+
+@_safe
 def log_task(description: str, plan: str, saved: bool) -> None:
     with _connection() as conn:
         conn.execute(
@@ -472,6 +501,19 @@ def stats_since(days: int = 30) -> dict[str, Any]:
                 (cutoff,),
             ).fetchall()
 
+            routes_by_via = conn.execute(
+                "SELECT via, COUNT(*) FROM routes WHERE ts > ? GROUP BY via",
+                (cutoff,),
+            ).fetchall()
+
+            # The inputs the router couldn't place -- raw material for new
+            # router-prompt examples.
+            route_fallbacks = conn.execute(
+                "SELECT input FROM routes WHERE ts > ? "
+                "AND via IN ('fallback', 'error') ORDER BY ts DESC LIMIT 20",
+                (cutoff,),
+            ).fetchall()
+
             return {
                 "days": days,
                 "reviews": {row[0]: row[1] for row in reviews},
@@ -498,6 +540,10 @@ def stats_since(days: int = 30) -> dict[str, Any]:
                     "by_repo":            [{"repo": r[0], "calls": r[1],
                                             "cost_usd": r[2] or 0.0}
                                            for r in token_by_repo],
+                },
+                "routing": {
+                    "by_via":    {row[0]: row[1] for row in routes_by_via},
+                    "fallbacks": [r[0] for r in route_fallbacks],
                 },
             }
     except Exception as e:

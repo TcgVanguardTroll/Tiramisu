@@ -41,8 +41,7 @@ or universal coding rules (those live in `engineering-principles.md` /
 ```
 
 The status line at the bottom is optional. Use `planned -- not yet wired
-into the t CLI` for agents whose CLI surface doesn't exist yet (see
-`cannoli.md`, `mochi.md`, `brioche.md`).
+into the t CLI` for agents whose CLI surface doesn't exist yet.
 
 ---
 

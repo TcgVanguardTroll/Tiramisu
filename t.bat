@@ -27,6 +27,8 @@ IF /I "%1"=="chat"      GOTO chat
 IF /I "%1"=="learn"     GOTO learn
 IF /I "%1"=="reflect"   GOTO reflect
 IF /I "%1"=="research"  GOTO research
+IF /I "%1"=="brainstorm" GOTO brainstorm
+IF /I "%1"=="onboard"  GOTO onboard
 IF /I "%1"=="help"      GOTO usage
 GOTO unknown
 
@@ -109,6 +111,18 @@ REM  t research sources show             -- dump raw sources.json
 %PYTHON% "%TIRAMISU_ROOT%\scripts\research.py" %2 %3 %4 %5 %6 %7 %8 %9
 GOTO end
 
+:brainstorm
+REM  t brainstorm                        -- interactive topic prompt
+REM  t brainstorm should X use Y         -- words joined into one topic
+%PYTHON% "%TIRAMISU_ROOT%\scripts\brainstorm.py" %2 %3 %4 %5 %6 %7 %8 %9
+GOTO end
+
+:onboard
+REM  t onboard                           -- interactive need prompt
+REM  t onboard we need an agent that...  -- words joined into one description
+%PYTHON% "%TIRAMISU_ROOT%\scripts\onboard.py" %2 %3 %4 %5 %6 %7 %8 %9
+GOTO end
+
 :usage
 echo.
 echo   Tiramisu  --  t ^<command^> [args]
@@ -124,6 +138,8 @@ echo   t chat [question]   Conversational mode -- read-only, remembers context
 echo   t learn "text"      Teach the agents a preference
 echo   t reflect [days]    Weekly self-improvement report
 echo   t research [action] Cannoli's external research; auto-runs weekly
+echo   t brainstorm [...]  Mochi stress-tests an idea before you scope it
+echo   t onboard [...]     Brioche drafts a new agent persona
 echo   t help              This message
 echo.
 GOTO end
