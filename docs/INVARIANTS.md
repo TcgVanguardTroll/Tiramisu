@@ -242,6 +242,31 @@ all-no-changes-nothing end-to-end tests.
 
 ---
 
+## 10. `<private>` redaction never persists secrets
+
+**Invariant.** Every free-text field written to `learnings.db` (preferences,
+reviews, commit drafts/finals, task plans, override snippets) passes through
+`memory.redact_private()` first. Content inside `<private>…</private>` is
+replaced with `[redacted]` before insert, so it lands in neither the source
+table nor the FTS index. A dangling, unclosed `<private>` redacts to
+end-of-string. Redaction is fail-soft: non-strings and tag-free text pass
+through unchanged.
+
+**Why it matters.** `learnings.db` is durable and now full-text searchable;
+a secret pasted into a preference or commit message would otherwise persist
+indefinitely and surface in `t learn search`. `<private>` gives the user a
+deterministic, pre-storage kill switch — the redaction happens at the write
+boundary, not at display time, so the secret never touches disk.
+
+**Enforced by.** `tests/test_memory_learnings.py` — `test_redact_*`,
+`test_preference_stored_with_secret_redacted`,
+`test_redacted_content_is_not_searchable`.
+
+**Lives in.** `scripts/memory.py` — `redact_private()` and the write helpers
+that call it.
+
+---
+
 ## Adding a new invariant
 
 If you're tightening a rule that future code must follow:

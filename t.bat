@@ -81,6 +81,7 @@ GOTO end
 REM  t learn "text"         -- teach the agents a preference
 REM  t learn list           -- show active preferences
 REM  t learn forget <id>    -- deactivate a preference
+REM  t learn search <query> -- full-text search everything the crew has learned
 %PYTHON% "%TIRAMISU_ROOT%\scripts\learn.py" %2 %3 %4 %5 %6 %7 %8 %9
 GOTO end
 

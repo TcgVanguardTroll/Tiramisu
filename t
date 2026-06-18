@@ -76,6 +76,7 @@ case "$cmd" in
   t implement "..."   Eclair writes code with full codebase access
   t chat [question]   Conversational mode -- read-only, remembers context
   t learn "text"      Teach the agents a preference
+  t learn search ...  Full-text search everything the crew has learned
   t reflect [days]    Weekly self-improvement report
   t research [action] Cannoli's external research; auto-runs weekly
                       (apply = adopt findings into steering, y/N each)
