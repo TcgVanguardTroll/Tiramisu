@@ -20,9 +20,10 @@ This document is the deep dive. The README has the one-paragraph version.
 |---|---|---|---|
 | **Anchors** (watched sources) | Diffs the URLs in your `sources.json` | `findings_YYYY-MM-DD.md` | ~$0.04 |
 | **Discovery** (scouting) | GitHub Trending + HackerNews + arxiv search → candidate URLs | `candidates_YYYY-MM-DD.md` | ~$0.13 |
+| **Benchmark** (borrow-analysis) | Reads the top trending repos' READMEs and proposes what Tiramisu could borrow, filtered through CLAUDE.md §4/§6 | `benchmark_YYYY-MM-DD.md` | ~$0.05 |
 | **Library** (local docs / PDFs / books) | Reads files you drop into `~/.tiramisu/library/` or `<repo>/.tiramisu/library/` | `findings_library_YYYY-MM-DD.md` | depends on what's added |
 
-Total weekly steady-state cost: **~$0.17**. Discovery uses only free public APIs (GitHub Search + HN Algolia + arxiv) — no API keys needed.
+Total weekly steady-state cost: **~$0.22**. Discovery and benchmark use only free public APIs (GitHub Search + HN Algolia + arxiv) for fetching — no API keys needed beyond the Anthropic key for summarization.
 
 When findings are waiting, the next `tiramisu` invocation surfaces a one-liner:
 
@@ -41,6 +42,7 @@ When findings are waiting, the next `tiramisu` invocation surfaces a one-liner:
 | `t research run` | Scan watched sources now for new deltas |
 | `t research apply [file]` | Walk the latest (or given) findings file; adopt each proposal with a y/N |
 | `t research discover` | Scout GitHub Trending + HN + arxiv for new candidate sources |
+| `t research benchmark [topic..]` | Analyze top trending repos for ideas Tiramisu could borrow (proposal-only) |
 | `t research ingest <path>` | Manually ingest a PDF / `.md` / `.txt` / `.rst` file or directory |
 | `t research grab <arxiv-id>` | Download an arxiv paper into your library (auto-ingests on next run) |
 | `t research grab --all` | Download every arxiv paper from the latest candidates file |
@@ -136,6 +138,43 @@ Each arxiv result is ranked 1–5 based on the abstract — Cannoli never downlo
 ```
 
 Run `t research grab 2401.12345` to pull that one paper. Or `t research grab --all` to download every arxiv candidate from the latest scan. Papers land in `~/.tiramisu/library/arxiv/` and get auto-ingested (with chunked PDF splitting if needed) on the next `t research all` or weekly background run.
+
+---
+
+## Layer 2.5: Benchmark (what could we borrow?)
+
+Discovery answers "what new *sources* should I watch?". Benchmark answers a
+different question: **"of the tools trending in our space right now, what could
+*Tiramisu itself* borrow?"** — the workflow a maintainer ran by hand to produce
+[`docs/research/2026-06-18-trending-repos.md`](research/2026-06-18-trending-repos.md), now automated.
+
+```sh
+t research benchmark                 # default topics (claude, ai-agents, anthropic)
+t research benchmark rag agents      # override the topics to scout
+```
+
+For each of the top trending repos it reads the README and asks Cannoli to
+judge it **against Tiramisu's own invariants** (a distilled copy of CLAUDE.md
+§4/§6 ships in the prompt), producing one section per repo:
+
+```markdown
+### owner/repo
+**Relevance:** 4/5
+**What it does:** <concrete mechanisms>
+**What Tiramisu could borrow:** <a specific, in-scope idea — or "nothing">
+**Invariant check:** fits / conflicts with §X because …
+**Proposed action:** <a backlog item, or "skip">
+```
+
+It runs as part of `t research all` (so it's covered by the weekly schedule and
+the stale-week piggyback), and the report is surfaced by the same pending-notice
++ `t research list` machinery as findings and candidates.
+
+**Proposal-only, by design.** Benchmark never edits code or personas — auto-applying
+ideas scraped from trending repos is exactly what CLAUDE.md §4.3 forbids. You read
+the report and implement what's worth it; steering-shaped suggestions can be funneled
+through `t research apply`. Ideas that would violate a hard invariant are flagged in
+the report, not queued.
 
 ---
 

@@ -96,6 +96,7 @@ REM  t research                          -- show latest unread findings/candidat
 REM  t research run                      -- force a scan of watched sources now
 REM  t research apply [file]             -- adopt findings into steering docs (y/N each)
 REM  t research discover                 -- scout GitHub Trending + HN for new candidates
+REM  t research benchmark [topic..]      -- analyze trending repos for ideas Tiramisu could borrow
 REM  t research ingest <path>            -- ingest a PDF / .md / .txt / .rst file or dir
 REM  t research grab <arxiv-id>          -- download an arxiv paper into the library
 REM  t research grab --all               -- download every arxiv candidate from latest scan

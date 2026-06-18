@@ -79,7 +79,8 @@ case "$cmd" in
   t learn search ...  Full-text search everything the crew has learned
   t reflect [days]    Weekly self-improvement report
   t research [action] Cannoli's external research; auto-runs weekly
-                      (apply = adopt findings into steering, y/N each)
+                      (apply = adopt findings into steering, y/N each;
+                       benchmark = analyze trending repos for ideas to borrow)
   t brainstorm [...]  Mochi stress-tests an idea before you scope it
   t onboard [...]     Brioche drafts a new agent persona for an unmet need
   t help              This message

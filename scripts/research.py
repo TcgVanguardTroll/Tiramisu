@@ -47,6 +47,7 @@ from research_common import (
     STALE_DAYS, MAX_SRC_CHARS, _fetch,
 )
 from research_discovery import discover, grab_paper, grab_all_from_latest
+from research_benchmark import benchmark
 from research_library import (
     ingest_library, ingest_path_cli, library_list,
     scout_library, show_latest_scout,
@@ -150,10 +151,12 @@ def is_stale() -> bool:
 
 
 def _is_research_output(path: Path) -> bool:
-    """Either findings_*.md (delta on watched source) or candidates_*.md
-    (new source proposals from discovery layer)."""
+    """findings_*.md (delta on watched source), candidates_*.md (new source
+    proposals from discovery), or benchmark_*.md (borrow-analysis of trending
+    repos)."""
     name = path.name
-    return name.startswith("findings_") or name.startswith("candidates_")
+    return (name.startswith("findings_") or name.startswith("candidates_")
+            or name.startswith("benchmark_"))
 
 
 def _all_research_files() -> list[Path]:
@@ -437,7 +440,12 @@ def list_all() -> None:
     for f in files:
         marker = f.with_suffix(f.suffix + READ_MARKER)
         status = "read" if marker.exists() else "UNREAD"
-        kind   = "candidates" if f.name.startswith("candidates_") else "findings  "
+        if f.name.startswith("candidates_"):
+            kind = "candidates"
+        elif f.name.startswith("benchmark_"):
+            kind = "benchmark "
+        else:
+            kind = "findings  "
         ts     = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
         print(f"  [{status:6}]  {kind}  {f.name}   ({ts})")
     print()
@@ -595,6 +603,9 @@ def main():
         apply_cli(args.rest)
     elif args.action == "discover":
         discover(quiet=args.quiet)
+    elif args.action == "benchmark":
+        # `t research benchmark [topic ...]` -- override topics via args.rest
+        benchmark(topics=args.rest or None, quiet=args.quiet)
     elif args.action == "ingest":
         if not args.rest:
             print("Usage: t research ingest <file-or-directory>")
@@ -626,6 +637,7 @@ def main():
     elif args.action == "all":
         run_research(quiet=args.quiet)
         discover(quiet=args.quiet)
+        benchmark(quiet=args.quiet)
         ingest_library(quiet=args.quiet)
     elif args.action == "mute":
         mute_all_pending()
@@ -635,7 +647,8 @@ def main():
         _sources_subcmd(args.rest)
     else:
         print(f"Unknown action: {args.action!r}")
-        print("Valid: show | run | apply [file] | discover | grab <id|--all> | "
+        print("Valid: show | run | apply [file] | discover | "
+              "benchmark [topic..] | grab <id|--all> | "
               "ingest <path> | scout <path> | show-scout | library | "
               "all | mute | list | sources [...]")
         sys.exit(1)
