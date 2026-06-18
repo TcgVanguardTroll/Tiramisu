@@ -68,8 +68,9 @@ def cmd_add(text):
     category = categorize(text)
     result = memory.add_preference(text, category=category, source="manual")
     if result == "duplicate":
-        print(f"\n  Already known: {text}")
-        print("  (skipped -- this preference is already active. See: t learn list)\n")
+        print(f"\n  Already known: {memory.redact_private(text)}")
+        print("  Reinforced it -- re-teaching bumps a preference's weight so it "
+              "leads every prompt. (See: t learn list)\n")
         return
     if result is None:
         print("\n  [learn] Could not save that preference (memory unavailable).\n")
@@ -118,7 +119,9 @@ def cmd_list():
     for cat, items in sorted(by_cat.items()):
         print(f"  [{cat}]")
         for p in items:
-            print(f"    #{p['id']}  {p['text']}")
+            conf = p.get("confidence", 1) or 1
+            badge = f"  (x{conf})" if conf > 1 else ""
+            print(f"    #{p['id']}  {p['text']}{badge}")
         print()
 
 

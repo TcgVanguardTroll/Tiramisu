@@ -58,6 +58,10 @@ Be honest if the data is too sparse to draw conclusions. Do not invent patterns.
 ## Active preferences already in place
 {preferences}
 
+(A "reinforced xN" tag means the user has taught that rule N times -- treat
+those as well-established; don't re-propose them. Report only; never change
+a preference's weight yourself.)
+
 ## Natural-language router decisions
 {routing}
 
@@ -129,7 +133,12 @@ def format_preferences():
     prefs = memory.get_active_preferences()
     if not prefs:
         return "  (none -- the user hasn't added any preferences)"
-    return "\n".join(f"  [{p['category']}] {p['text']}" for p in prefs)
+    lines = []
+    for p in prefs:
+        conf = p.get("confidence", 1) or 1
+        badge = f" (reinforced x{conf})" if conf > 1 else ""
+        lines.append(f"  [{p['category']}] {p['text']}{badge}")
+    return "\n".join(lines)
 
 
 def format_token_usage(stats):

@@ -126,7 +126,16 @@ def _load_preferences() -> str:
         prefs = memory.get_active_preferences()
         if not prefs:
             return ""
-        lines = [f"- [{p['category'] or 'general'}] {p['text']}" for p in prefs]
+        lines = []
+        for p in prefs:
+            line = f"- [{p['category'] or 'general'}] {p['text']}"
+            # Preferences the user re-taught carry more weight; mark them so
+            # the model treats them as higher priority (P4). Ordering already
+            # puts these first; the tag makes the salience explicit.
+            conf = p.get("confidence", 1) or 1
+            if conf > 1:
+                line += f"  (reinforced x{conf})"
+            lines.append(line)
         return "\n".join(lines)
     except Exception as e:
         print(f"[tiramisu] steering: could not load preferences: {e}", file=sys.stderr)

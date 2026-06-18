@@ -78,7 +78,7 @@ If you already know which agent you want, skip the router:
 | `t review` | Cookie reviews the currently staged diff |
 | `t pr [base]` | Cookie reviews your whole branch vs main |
 | `t pr --post` | ...and posts inline comments at exact lines on the GitHub PR |
-| `t learn "text"` | Teach the agents a preference (e.g. `t learn "prefer guard clauses"`); duplicates are skipped, and `<private>…</private>` spans are stripped before storage |
+| `t learn "text"` | Teach the agents a preference (e.g. `t learn "prefer guard clauses"`); re-teaching reinforces it (raises its weight so it leads every prompt), and `<private>…</private>` spans are stripped before storage |
 | `t learn list` | Show all active preferences |
 | `t learn search "query"` | Full-text search everything the crew has learned (preferences, reviews, commit messages, task plans) — SQLite FTS5, no vector store |
 | `t reflect [days]` | Madeleine's self-improvement report from accumulated data |

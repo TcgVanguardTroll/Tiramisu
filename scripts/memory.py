@@ -187,6 +187,17 @@ MIGRATIONS = [
             WHERE plan IS NOT NULL AND plan != '';
         """,
     ),
+    (
+        6,
+        "Add preferences.confidence for re-teach reinforcement scoring",
+        # Each time a preference is taught again (dedup path in
+        # add_preference), its confidence is bumped instead of the re-add
+        # being dropped. get_active_preferences() orders by confidence so
+        # the most-affirmed rules sort to the top of every composed prompt.
+        # Default 1 = "taught once". Confidence only ever changes via a
+        # human re-teach -- never the agent loop (CLAUDE.md §4.3).
+        "ALTER TABLE preferences ADD COLUMN confidence INTEGER DEFAULT 1",
+    ),
 ]
 
 
@@ -482,6 +493,12 @@ def add_preference(text: str, category: str | None = None,
             (clean,),
         ).fetchone()
         if existing:
+            # Re-teaching an existing rule reinforces it (P4): bump confidence
+            # rather than storing a duplicate. Human-initiated only.
+            conn.execute(
+                "UPDATE preferences SET confidence = confidence + 1 WHERE id = ?",
+                (existing[0],),
+            )
             return "duplicate"
         cur = conn.execute(
             "INSERT INTO preferences (text, category, source) VALUES (?, ?, ?)",
@@ -500,18 +517,24 @@ def deactivate_preference(pref_id: int) -> None:
 # -------- Read helpers --------
 
 def get_active_preferences(category: str | None = None) -> list[dict[str, Any]]:
+    # Most-reinforced first (P4), then most-recent. High-confidence rules
+    # thus lead every composed prompt.
+    order = "ORDER BY confidence DESC, ts DESC"
     try:
         with _connection() as conn:
             if category:
                 rows = conn.execute(
-                    "SELECT id, text, category FROM preferences WHERE active = 1 AND category = ? ORDER BY ts DESC",
+                    "SELECT id, text, category, confidence FROM preferences "
+                    f"WHERE active = 1 AND category = ? {order}",
                     (category,),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT id, text, category FROM preferences WHERE active = 1 ORDER BY ts DESC"
+                    "SELECT id, text, category, confidence FROM preferences "
+                    f"WHERE active = 1 {order}"
                 ).fetchall()
-            return [{"id": r[0], "text": r[1], "category": r[2]} for r in rows]
+            return [{"id": r[0], "text": r[1], "category": r[2],
+                     "confidence": r[3]} for r in rows]
     except Exception as e:
         print(f"[tiramisu] memory warning: {type(e).__name__}: {e}", file=sys.stderr)
         return []
