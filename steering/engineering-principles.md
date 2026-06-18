@@ -123,3 +123,21 @@ These apply when the agent is WRITING code, not just reviewing it:
 - **Simplicity First**: Write the minimum code that solves the stated problem. No unrequested abstractions, no speculative features, no "flexibility" that wasn't asked for. If the user asked for X, deliver X — not X + Y + Z "just in case."
 - **Surgical Changes**: Touch ONLY code directly related to the request. No reformatting adjacent lines, no "while I'm here" cleanup, no renaming unrelated variables. Every changed line must trace to what was asked.
 - **Goal-Driven Execution**: Convert vague instructions into verifiable success criteria before starting. "Fix the bug" → "write a test that reproduces it, then make it pass." "Add a feature" → "define the acceptance criteria, implement, verify."
+
+### The minimalist's decision ladder
+
+The best code is the code you never wrote. Before writing any code, walk this
+ladder and stop at the first rung that holds:
+
+1. **Does this need to exist?** → No: skip it. (YAGNI — the cheapest code is none.)
+2. **Does the stdlib do it?** → Use the stdlib.
+3. **Is it a native platform feature?** → Use the platform.
+4. **Does an already-installed dependency do it?** → Use it. Don't add a new dep for it.
+5. **Is it one line?** → Write the one line.
+6. **Only then**: write the minimum that actually works.
+
+**Lazy, not negligent.** This ladder trims *speculative* and *redundant* code —
+it is NOT a license to cut corners. These are never on the chopping block:
+trust-boundary validation, data-loss handling, security, and accessibility.
+Skipping a "nice to have" abstraction is laziness done right; skipping input
+validation on untrusted data is a bug.
