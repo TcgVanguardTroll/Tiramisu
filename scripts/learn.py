@@ -8,6 +8,10 @@ Usage:
     t learn "Always type-annotate public Python functions"
     t learn list                # show active preferences
     t learn forget <id>         # deactivate a preference by id
+    t learn search <query>      # full-text search everything the crew learned
+
+Tip: wrap secrets in <private>...</private> and they're stripped before
+anything is stored.
 """
 import sys
 from pathlib import Path
@@ -62,10 +66,41 @@ def cmd_add(text):
         sys.exit(1)
 
     category = categorize(text)
-    memory.add_preference(text, category=category, source="manual")
-    print(f"\n  Learned [{category}]: {text}\n")
+    result = memory.add_preference(text, category=category, source="manual")
+    if result == "duplicate":
+        print(f"\n  Already known: {text}")
+        print("  (skipped -- this preference is already active. See: t learn list)\n")
+        return
+    if result is None:
+        print("\n  [learn] Could not save that preference (memory unavailable).\n")
+        return
+    # Show the redacted form so a <private> secret isn't echoed back.
+    print(f"\n  Learned [{category}]: {memory.redact_private(text)}\n")
     print("  This will now be respected by every agent invocation.")
     print("  See all with: t learn list\n")
+
+
+def cmd_search(query):
+    query = query.strip()
+    if not query:
+        print("[learn] Usage: t learn search <query>")
+        sys.exit(1)
+
+    results = memory.search_learnings(query)
+    if not results:
+        print(f"\n  No learnings match {query!r}.")
+        print("  (Search covers preferences, reviews, commit messages, and task plans.)\n")
+        return
+
+    label = {"preference": "pref", "review": "review", "commit": "commit", "task": "task"}
+    print(f"\n  {len(results)} learning(s) matching {query!r}:\n")
+    for r in results:
+        kind = label.get(r["kind"], r["kind"])
+        text = " ".join((r["text"] or "").split())
+        if len(text) > 120:
+            text = text[:120] + "…"
+        print(f"  [{kind:7}] {text}")
+    print()
 
 
 def cmd_list():
@@ -108,6 +143,8 @@ def main():
         cmd_list()
     elif args[0] == "forget" and len(args) >= 2:
         cmd_forget(args[1])
+    elif args[0] == "search":
+        cmd_search(" ".join(args[1:]))
     else:
         text = " ".join(args).strip()
         cmd_add(text)

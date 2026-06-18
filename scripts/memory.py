@@ -14,6 +14,7 @@ Everything is opt-in and fail-soft: if the DB is unavailable, the hooks still
 work without learning.
 """
 import os
+import re
 import sqlite3
 import sys
 import hashlib
@@ -159,6 +160,33 @@ MIGRATIONS = [
         CREATE INDEX IF NOT EXISTS idx_routes_ts ON routes(ts);
         """,
     ),
+    (
+        5,
+        "Add learnings_fts FTS5 index for `t learn search`",
+        # A single full-text index over the free-text learnings (preferences,
+        # Cookie reviews, committed messages, task plans). FTS5 keeps search
+        # in structured SQLite -- NO vector store (CLAUDE.md §6). Backfill
+        # existing rows so search covers history, not just new writes. If this
+        # SQLite build lacks FTS5, _apply_migrations records the migration as
+        # skipped and search degrades to empty (see the "no such module"
+        # branch below).
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS learnings_fts USING fts5(
+            kind, text, ref_id UNINDEXED
+        );
+        INSERT INTO learnings_fts (kind, text, ref_id)
+            SELECT 'preference', text, id FROM preferences WHERE active = 1;
+        INSERT INTO learnings_fts (kind, text, ref_id)
+            SELECT 'review', review, id FROM reviews
+            WHERE review IS NOT NULL AND review != '';
+        INSERT INTO learnings_fts (kind, text, ref_id)
+            SELECT 'commit', final, id FROM commit_drafts
+            WHERE final IS NOT NULL AND final != '';
+        INSERT INTO learnings_fts (kind, text, ref_id)
+            SELECT 'task', plan, id FROM tasks
+            WHERE plan IS NOT NULL AND plan != '';
+        """,
+    ),
 ]
 
 
@@ -225,6 +253,16 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
                     (version, description + " (detected as already applied)"),
                 )
                 continue
+            if "no such module" in msg:
+                # This SQLite build lacks a module the migration needs (e.g.
+                # FTS5). Record it as applied so we don't retry every
+                # connection; the dependent feature degrades gracefully.
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (?, ?)",
+                    (version, description + " (skipped: module unavailable)"),
+                )
+                continue
             raise
 
 
@@ -258,6 +296,60 @@ def _safe(fn):
     return wrapped
 
 
+# --------------------------------------------------------------------------
+# <private> redaction (P2)
+# --------------------------------------------------------------------------
+# Anything wrapped in <private>...</private> is stripped before it is written
+# to learnings.db (and therefore before it is indexed for search). Borrowed
+# from claude-mem: the user controls what the crew is allowed to remember. A
+# dangling, unclosed <private> redacts to end-of-string so a secret typed
+# after an opening tag can never leak.
+_PRIVATE_CLOSED = re.compile(r"<private>.*?</private>", re.IGNORECASE | re.DOTALL)
+_PRIVATE_OPEN = re.compile(r"<private>.*", re.IGNORECASE | re.DOTALL)
+_REDACTED = "[redacted]"
+
+
+def redact_private(text: Any) -> Any:
+    """Replace <private>...</private> spans with [redacted]. Non-strings and
+    text without the tag pass through untouched (fail-soft)."""
+    if not isinstance(text, str) or "<private>" not in text.lower():
+        return text
+    text = _PRIVATE_CLOSED.sub(_REDACTED, text)
+    text = _PRIVATE_OPEN.sub(_REDACTED, text)  # mop up any unclosed tag
+    return text
+
+
+# --------------------------------------------------------------------------
+# FTS5 search index (P1)
+# --------------------------------------------------------------------------
+_FTS_TOKEN = re.compile(r"[A-Za-z0-9_]+")
+
+
+def _fts_query(raw: str) -> str:
+    """Turn a free-text query into a safe FTS5 MATCH expression: each token
+    quoted as a literal (so quotes/parens/operators in user input can't
+    produce an FTS5 syntax error), joined by implicit AND. Empty if no
+    usable tokens."""
+    tokens = _FTS_TOKEN.findall(raw or "")
+    return " ".join(f'"{t}"' for t in tokens)
+
+
+def _fts_index(conn: sqlite3.Connection, kind: str, ref_id: int | None,
+               text: str | None) -> None:
+    """Best-effort: add one row to learnings_fts. Swallows OperationalError
+    (e.g. SQLite compiled without FTS5) so indexing never breaks the primary
+    write that just happened in the same transaction."""
+    if not text:
+        return
+    try:
+        conn.execute(
+            "INSERT INTO learnings_fts (kind, text, ref_id) VALUES (?, ?, ?)",
+            (kind, text, ref_id),
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
 def diff_hash(diff: str) -> str:
     return hashlib.sha256(diff.encode("utf-8", errors="replace")).hexdigest()[:16]
 
@@ -272,6 +364,7 @@ def similarity(a: str, b: str) -> float:
 
 @_safe
 def log_review(repo_path: str | Path, diff: str, files: list[str], review: str, outcome: str) -> int | None:
+    clean_review = redact_private(review or "")[:4000]
     with _connection() as conn:
         cur = conn.execute(
             "INSERT INTO reviews (repo_path, diff_hash, files, diff_chars, review, blockers_found, outcome) "
@@ -281,11 +374,12 @@ def log_review(repo_path: str | Path, diff: str, files: list[str], review: str, 
                 diff_hash(diff),
                 ",".join(files)[:2000],
                 len(diff),
-                review[:4000],
+                clean_review,
                 1 if "BLOCKER" in (review or "").upper() else 0,
                 outcome,
             ),
         )
+        _fts_index(conn, "review", cur.lastrowid, clean_review)
         return cur.lastrowid
 
 
@@ -294,7 +388,7 @@ def log_override(review_id: int, snippet: str, files: list[str]) -> None:
     with _connection() as conn:
         conn.execute(
             "INSERT INTO overrides (review_id, snippet, files) VALUES (?, ?, ?)",
-            (review_id, (snippet or "")[:500], ",".join(files)[:1000]),
+            (review_id, redact_private(snippet or "")[:500], ",".join(files)[:1000]),
         )
 
 
@@ -303,7 +397,7 @@ def log_commit_draft(repo_path: str | Path, files: list[str], draft: str) -> int
     with _connection() as conn:
         cur = conn.execute(
             "INSERT INTO commit_drafts (repo_path, files, draft) VALUES (?, ?, ?)",
-            (str(repo_path), ",".join(files)[:1000], draft[:2000]),
+            (str(repo_path), ",".join(files)[:1000], redact_private(draft or "")[:2000]),
         )
         return cur.lastrowid
 
@@ -324,12 +418,14 @@ def update_commit_final(repo_path: str | Path, final: str) -> int | None:
         if not row:
             return None
         rid, draft = row
-        sim = similarity(draft, final)
+        clean_final = redact_private(final or "")[:2000]
+        sim = similarity(draft, clean_final)
         accepted = 1 if sim >= 0.85 else 0
         conn.execute(
             "UPDATE commit_drafts SET final = ?, similarity = ?, accepted = ? WHERE id = ?",
-            (final[:2000], sim, accepted, rid),
+            (clean_final, sim, accepted, rid),
         )
+        _fts_index(conn, "commit", rid, clean_final)
         return rid
 
 
@@ -361,20 +457,38 @@ def log_route(user_input: str, command: str, via: str) -> None:
 
 @_safe
 def log_task(description: str, plan: str, saved: bool) -> None:
+    clean_plan = redact_private(plan or "")[:4000]
     with _connection() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO tasks (description, plan, saved) VALUES (?, ?, ?)",
-            (description[:500], plan[:4000], 1 if saved else 0),
+            (redact_private(description or "")[:500], clean_plan, 1 if saved else 0),
         )
+        _fts_index(conn, "task", cur.lastrowid, clean_plan)
 
 
 @_safe
-def add_preference(text: str, category: str | None = None, source: str = "manual") -> None:
+def add_preference(text: str, category: str | None = None,
+                   source: str = "manual") -> str | None:
+    """Store a preference, redacting <private> spans and skipping duplicates.
+    Returns "added", "duplicate", or None (on failure, via @_safe). Dedup is
+    case/whitespace-insensitive over ACTIVE preferences, so re-teaching a rule
+    you already have -- or that `t research apply` re-proposes -- doesn't let
+    learnings.db accumulate endlessly (borrowed from DeerFlow's dedup-at-apply)."""
+    clean = redact_private(text or "").strip()[:500]
     with _connection() as conn:
-        conn.execute(
+        existing = conn.execute(
+            "SELECT id FROM preferences "
+            "WHERE active = 1 AND lower(trim(text)) = lower(trim(?))",
+            (clean,),
+        ).fetchone()
+        if existing:
+            return "duplicate"
+        cur = conn.execute(
             "INSERT INTO preferences (text, category, source) VALUES (?, ?, ?)",
-            (text.strip()[:500], category, source),
+            (clean, category, source),
         )
+        _fts_index(conn, "preference", cur.lastrowid, clean)
+        return "added"
 
 
 @_safe
@@ -398,6 +512,31 @@ def get_active_preferences(category: str | None = None) -> list[dict[str, Any]]:
                     "SELECT id, text, category FROM preferences WHERE active = 1 ORDER BY ts DESC"
                 ).fetchall()
             return [{"id": r[0], "text": r[1], "category": r[2]} for r in rows]
+    except Exception as e:
+        print(f"[tiramisu] memory warning: {type(e).__name__}: {e}", file=sys.stderr)
+        return []
+
+
+def search_learnings(query: str, limit: int = 20) -> list[dict[str, Any]]:
+    """Full-text search across stored learnings (preferences, reviews,
+    committed messages, task plans) via the FTS5 index. Returns ranked
+    matches as {kind, text, ref_id}. Empty list on empty query, no match,
+    or any FTS unavailability -- never raises (fail-soft like the other
+    reads). No vectors: this is plain SQLite FTS5 (CLAUDE.md §6)."""
+    match = _fts_query(query)
+    if not match:
+        return []
+    try:
+        with _connection() as conn:
+            rows = conn.execute(
+                "SELECT kind, text, ref_id FROM learnings_fts "
+                "WHERE learnings_fts MATCH ? ORDER BY rank LIMIT ?",
+                (match, limit),
+            ).fetchall()
+            return [{"kind": r[0], "text": r[1], "ref_id": r[2]} for r in rows]
+    except sqlite3.OperationalError:
+        # FTS5 not compiled in, or index missing -- search is unavailable.
+        return []
     except Exception as e:
         print(f"[tiramisu] memory warning: {type(e).__name__}: {e}", file=sys.stderr)
         return []
