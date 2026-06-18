@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from llm import invoke_stream_markdown, FAST_MODEL
 from steering import load_steering, detect_languages
 from gitutil import run_git
+from secrets_scan import scan_diff, format_findings
 import memory
 
 MAX_DIFF_CHARS     = 6_000
@@ -124,6 +125,12 @@ def main():
     files = get_changed_files()
     languages = detect_languages(files)
 
+    # Deterministic secret scan over the added lines, BEFORE the LLM review.
+    # Warning-only -- it never blocks; Cookie keeps authority over the commit.
+    secret_findings = scan_diff(diff)
+    if secret_findings:
+        print(format_findings(secret_findings))
+
     system = load_steering(
         agent="cookie",
         languages=languages,
@@ -155,6 +162,14 @@ def main():
     )
     if file_context:
         prompt += f"\n\n## Full file context\n\n{file_context}"
+    if secret_findings:
+        rules = ", ".join(sorted({f["rule"] for f in secret_findings}))
+        prompt += (
+            f"\n\n## Automated secret scan\nA deterministic scan flagged "
+            f"possible secrets in the diff ({rules}). If these are real "
+            f"credentials, call it out as a [BLOCKER]; if they're clearly "
+            f"placeholders or test fixtures, say so briefly."
+        )
 
     review = invoke_stream_markdown(
         prompt=prompt,

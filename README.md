@@ -95,7 +95,7 @@ If you already know which agent you want, skip the router:
 
 After `t hook` in a repo, every commit triggers (in git's hook order):
 
-1. 🐱🍪 **Cookie reviews** the staged diff plus the full content of each changed file (`pre-commit`). She has your engineering principles, code style for the relevant languages, and your learned preferences in her system prompt. She halts on `[BLOCKER]` and prompts to override.
+1. 🐱🍪 **Cookie reviews** the staged diff plus the full content of each changed file (`pre-commit`). A deterministic secret scan runs first and warns on any credential being introduced (AWS keys, tokens, private keys, hardcoded secrets) — masked, warning-only. Cookie has your engineering principles, code style for the relevant languages, and your learned preferences in her system prompt. She halts on `[BLOCKER]` and prompts to override.
 2. 🦡🍫 **Éclair drafts the commit message** from your staged diff (`prepare-commit-msg`), using your last 5 commits as few-shot examples so the voice matches yours.
 3. 📊 **Post-commit captures** the final message you actually shipped, so Éclair learns whether her drafts are landing as-is or getting heavily edited.
 
