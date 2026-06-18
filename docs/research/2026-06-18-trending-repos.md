@@ -24,8 +24,10 @@ signal is high. Representative repos scouted:
 
 | Repo | What it is | Relevance to Tiramisu |
 |---|---|---|
+| `DietrichGebert/ponytail` | YAGNI "lazy senior dev" steering ruleset (~27.6k★) | **5/5** — directly adoptable as steering |
 | `affaan-m/ECC` | "Agent harness OS": skills, instincts, security, research-first | **5/5** — closest analogue |
 | `thedotmack/claude-mem` | Persistent cross-session memory, FTS + vector | **4/5** — memory/learnings overlap |
+| `bytedance/deer-flow` | "Long-horizon SuperAgent harness" on LangGraph (~25k★) | 3/5 — memory/dedup ideas; mostly a non-choice |
 | `NousResearch/hermes-agent` | "The agent that grows with you" | 3/5 — self-improvement framing |
 | `JuliusBrussee/caveman` | Skill that cuts ~65% of tokens via terse prompts | 2/5 — token-cost adjacent |
 | `langchain-ai/langchain` | Agent *framework* | 2/5 — Tiramisu is deliberately not a framework |
@@ -83,6 +85,51 @@ cost budgets (`--budget`), token tracking (`token_usage`), git hooks
 `<private>` redaction (see §3). The vector half and the web UI are
 non-choices (see §4).
 
+### 2.3 `DietrichGebert/ponytail` — YAGNI steering ruleset *(strongest fit)*
+
+**What it does:** packages a single, sharp engineering discipline — "think
+like the laziest senior dev in the room; the best code is the code you never
+wrote" — as an always-on steering ruleset. Before writing code, the agent
+walks a **decision ladder**:
+
+> 1. Does this need to exist?  → no: skip it (YAGNI)
+> 2. Stdlib does it?           → use it
+> 3. Native platform feature?  → use it
+> 4. Installed dependency?     → use it
+> 5. One line?                 → one line
+> 6. Only then: the minimum that works
+
+And a **non-negotiable guard** — "Lazy, not negligent": trust-boundary
+validation, data-loss handling, security, and accessibility are *never* cut.
+Claimed effect: 80–94% less code, 42–75% less cost, 3–6× faster.
+
+**Why it's the strongest fit of anything scouted:** it is *not a framework* —
+it's a steering doc. It even ships in `.kiro/steering/` and `AGENTS.md`
+formats and exposes mode switches (`/ponytail lite|full|ultra|off`). That is
+**exactly** Tiramisu's model: a composed steering layer with toggles. It
+sharpens the rule already in `engineering-principles.md` ("surgical changes
+only — every line traces to the requirement") into an actionable ladder. It
+slots in with zero invariant conflict and is precisely what `t research
+apply` was built to adopt.
+
+### 2.4 `bytedance/deer-flow` — SuperAgent harness (mostly a non-choice)
+
+**What it does:** a long-horizon agent built on **LangGraph/LangChain** with
+a filesystem, sandbox execution, progressively-loaded skills, dynamic
+sub-agent spawning (scoped context, parallel, token usage attributed back),
+an HTTP gateway, and a web frontend. Persistent memory of "profile,
+preferences, accumulated knowledge," managed aggressively (summarize
+finished sub-tasks, offload intermediate results to the filesystem).
+
+**Mostly a non-choice for Tiramisu:** the framework core (LangGraph),
+HTTP gateway, web UI, Docker sandbox, and progressive "skills" all conflict
+with the local-first, CLI-only, not-a-framework, one-agent-one-job design
+(§4.4, §6). One concrete, in-scope idea is worth lifting, though:
+**memory dedup** — DeerFlow "skip[s] duplicate fact entries at apply time,
+so repeated preferences and context do not accumulate endlessly." Tiramisu's
+`learnings.db` preferences can grow stale/duplicative; dedup-on-write is a
+small, on-brand hardening (see P0b below).
+
 ---
 
 ## 3. Proposed improvement backlog (in-scope, prioritized)
@@ -90,7 +137,31 @@ non-choices (see §4).
 Each item lists source, the change, why it fits Tiramisu's design, the
 invariant check, and rough effort.
 
-### P1 — Searchable learnings via SQLite FTS5  *(recommended first)*
+### P0 — Adopt a ponytail-style YAGNI decision ladder  *(highest value / lowest risk)*
+- **Source:** `DietrichGebert/ponytail`.
+- **Change:** add the decision ladder + "lazy, not negligent" guard to
+  `steering/engineering-principles.md` (or land it as a `steering/learned/`
+  doc via `t research apply` — this is the canonical adoption path). Optional:
+  a composition toggle mirroring ponytail's lite/full modes.
+- **Why it fits:** it's a steering doc, the core Tiramisu pattern — no new
+  code, no new subsystem, no invariant tension. Sharpens the "surgical
+  changes only" rule that already exists. Most-distinctive, highest-leverage
+  change available, and it makes every agent (especially Éclair) write less.
+- **Invariant check:** §4.2 composition-over-duplication (put it in the
+  shared steering doc, not each persona) ✅ · §4.3 user-gated adoption ✅.
+- **Effort:** tiny. A steering-doc edit + (if toggled) a `steering.py` flag
+  and an order test.
+
+### P0b — Preference dedup on write
+- **Source:** `bytedance/deer-flow` (skip duplicate facts at apply time).
+- **Change:** in `memory.py`, dedup preferences/learnings on write so
+  repeated signals don't accumulate endlessly and bloat every prompt.
+- **Why it fits:** keeps the composed steering lean; pairs with P1/P2.
+- **Invariant check:** §4.5 fail-soft ✅ · §7 (no schema change needed —
+  pure write-path guard, or a uniqueness index migration if preferred) ✅.
+- **Effort:** small.
+
+### P1 — Searchable learnings via SQLite FTS5
 - **Source:** claude-mem's FTS5 layer.
 - **Change:** a `t learn search <query>` (and/or `t reflect search`) backed
   by an FTS5 virtual table over the existing reviews / drafts / preferences
@@ -167,10 +238,21 @@ Listing them so the decision is on the record, not re-litigated later.
 
 ## 5. Recommendation
 
-Ship **P1 + P2 together** as one coherent "searchable, privacy-respecting
-learnings" unit (both live in `memory.py`, share a migration, and reinforce
-each other). It's the most on-brand response to the trend — it delivers the
-"searchable self-improving memory" that ECC and claude-mem are built around,
-but using structured SQLite + FTS5 exactly as §6 prescribes, with zero new
-dependencies and no vector store. P3 is a strong, well-scoped follow-up;
-P4 last, and only with the §4.3 guardrail explicit.
+Do **P0 first** — adopting the ponytail YAGNI ladder into
+`engineering-principles.md` is a tiny, zero-risk steering edit with the
+highest leverage of anything here: it makes the whole crew write less code,
+and it's the textbook use case for `t research apply`. It needs no new code.
+
+Then ship **P1 + P2 (+ P0b)** together as one "searchable,
+privacy-respecting, lean learnings" unit (all live in `memory.py`, share a
+migration, reinforce each other). It's the most on-brand response to the
+trend — the "searchable self-improving memory" that ECC, claude-mem, and
+DeerFlow are built around, but using structured SQLite + FTS5 exactly as §6
+prescribes, with zero new dependencies and no vector store. P3 is a strong
+follow-up; P4 last, and only with the §4.3 guardrail explicit.
+
+The throughline across every top repo (ECC, claude-mem, DeerFlow): a harness
+with **skills + persistent memory + self-learning**. Tiramisu already has the
+crew and the gated learning loop; P0–P2 close the remaining gap (lean output,
+searchable memory) *without* importing the framework/vector/web-UI baggage
+that those repos carry and that this project deliberately rejects.
