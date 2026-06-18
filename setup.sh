@@ -64,6 +64,11 @@ if [ ! -f "$ENV_FILE" ]; then
 # Tiramisu environment
 # Get your key at: https://console.anthropic.com/
 ANTHROPIC_API_KEY=
+
+# Behind a TLS-intercepting proxy? Point research at its root cert:
+# TIRAMISU_CA_BUNDLE=/path/to/corp-root.pem
+# ...or, last resort, disable TLS verification for research fetches:
+# TIRAMISU_INSECURE_SSL=1
 EOF
     echo "  [4/5] Created: $ENV_FILE"
     needs_key=1

@@ -233,6 +233,28 @@ Two mechanisms keep Cannoli current; both end at the same human gate:
 
 ---
 
+## TLS behind a proxy
+
+Cannoli verifies TLS against [certifi](https://pypi.org/project/certifi/)'s
+modern root bundle, which fixes Windows' often-stale system store. Behind a
+corporate or sandbox proxy that intercepts TLS with its own root CA, that
+verification fails (`CERTIFICATE_VERIFY_FAILED: self-signed certificate in
+certificate chain`) and every fetch errors out. Two environment knobs (set
+in `~/.tiramisu/.env` or your shell) resolve it:
+
+- **`TIRAMISU_CA_BUNDLE=/path/to/corp-root.pem`** — the *correct* fix: point
+  Cannoli at your proxy's root cert so verification succeeds. `SSL_CERT_FILE`
+  and `REQUESTS_CA_BUNDLE` are also honored. A missing/unparseable bundle is
+  ignored — it never silently drops verification.
+- **`TIRAMISU_INSECURE_SSL=1`** — last-resort escape hatch: disables
+  verification entirely. Cannoli prints a one-time warning. Use only behind a
+  trusted proxy you control; never on an untrusted network.
+
+Verification is **on by default**; the only way to turn it off is the
+explicit `TIRAMISU_INSECURE_SSL` flag (pinned by `tests/test_research_ssl.py`).
+
+---
+
 ## Architecture invariants for this subsystem
 
 These match the broader rules in [CLAUDE.md](../CLAUDE.md) but are restated here because the research surface area is large:

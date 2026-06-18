@@ -57,6 +57,11 @@ if (-not (Test-Path $envFile)) {
 # Tiramisu environment
 # Get your key at: https://console.anthropic.com/
 ANTHROPIC_API_KEY=
+
+# Behind a TLS-intercepting proxy? Point research at its root cert:
+# TIRAMISU_CA_BUNDLE=C:\path\to\corp-root.pem
+# ...or, last resort, disable TLS verification for research fetches:
+# TIRAMISU_INSECURE_SSL=1
 "@ | Out-File -Encoding utf8 $envFile
     Write-Host "  [4/5] Created: $envFile" -ForegroundColor Yellow
     $needsKey = $true
