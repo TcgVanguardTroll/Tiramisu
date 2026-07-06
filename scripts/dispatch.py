@@ -218,6 +218,28 @@ PHRASE_STARTERS = [
     "review the branch",
 ]
 
+# Common subcommands per routable command, so the REPL completes e.g.
+# `research benchmark` and `learn search`, not just the bare verb.
+_SUBCOMMANDS = {
+    "learn":    ["search ", "list", "forget "],
+    "research": ["apply", "benchmark", "discover", "run", "list", "sources "],
+    "pr":       ["--post"],
+}
+# Verbs that take no argument read better with no trailing space.
+_TERMINAL = {"review", "reflect", "help"}
+
+
+def command_completions() -> list[str]:
+    """Autocomplete entries for the literal command vocabulary, DERIVED from
+    ROUTES so it can never drift out of sync with what the router accepts.
+    Each routable command plus its known subcommands."""
+    out: list[str] = []
+    for cmd in ROUTES:
+        out.append(cmd if cmd in _TERMINAL else cmd + " ")
+        for sub in _SUBCOMMANDS.get(cmd, []):
+            out.append(f"{cmd} {sub}")
+    return out
+
 
 class TiramisuCompleter(Completer):
     """Complete on built-ins + phrase starters + recent history (newest first)."""
@@ -232,7 +254,12 @@ class TiramisuCompleter(Completer):
         text_lower = text.lower()
         seen = set()
 
-        all_candidates = list(REPL_BUILTINS) + ["help", "?", "clear", "cls"] + PHRASE_STARTERS
+        all_candidates = (
+            command_completions()
+            + list(REPL_BUILTINS)
+            + ["?", "clear", "cls"]
+            + PHRASE_STARTERS
+        )
 
         for c in all_candidates:
             if c.lower().startswith(text_lower) and c not in seen:
