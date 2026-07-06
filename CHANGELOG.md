@@ -4,6 +4,53 @@ All notable changes to Tiramisu. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are tagged on
 `master`.
 
+## [1.2.0] — 2026-06-18
+
+The self-improvement loop gets sharper and safer. Cannoli can now
+autonomously study the tools trending in Tiramisu's space and report what's
+worth borrowing; the learnings store becomes searchable, private, and
+self-pruning; Cookie gains a secret scanner; and every agent writes less
+code by default. Every change was mined from a real survey of top trending
+repos (`docs/research/2026-06-18-trending-repos.md`) and filtered through
+the CLAUDE.md invariants — the rejected ideas (vector store, web UI,
+do-everything skills) are on the record, not in the tree.
+
+### Added
+- **`t research benchmark [topic..]`** — autonomously scouts the top trending
+  repos, reads each README, and writes a prioritized "what could Tiramisu
+  borrow?" report, every idea judged against §4/§6. Runs on the weekly
+  schedule via `t research all`. Proposal-only (§4.3) — never edits code.
+- **`t learn search <query>`** — full-text search over everything the crew has
+  learned (preferences, reviews, commit messages, task plans), backed by
+  SQLite **FTS5**. No vector store (§6); degrades to empty if FTS5 is absent.
+- **`<private>…</private>` redaction** — secrets wrapped in the tag are
+  stripped from every free-text field before it reaches `learnings.db` or the
+  search index. Pinned as INVARIANTS.md §10.
+- **Preference confidence scoring** — re-teaching a preference reinforces it
+  (bumps a confidence count) instead of being dropped; high-confidence rules
+  sort to the top of every composed prompt and are tagged `(reinforced xN)`.
+  Human-initiated only (§4.3).
+- **Deterministic secret scan in Cookie's pre-commit** — a regex pass over the
+  staged diff warns on introduced credentials (AWS/GitHub/Slack tokens,
+  private keys, hardcoded secrets), masked and warning-only (§4.4).
+- **Ponytail-style YAGNI decision ladder** in `engineering-principles.md` — an
+  actionable "need it? → stdlib? → platform? → dep? → one line? → minimum"
+  checklist with a "lazy, not negligent" guard, composed into every prompt.
+
+### Changed
+- **Dedup on preference write** — re-teaching a rule (or a research-apply
+  re-proposal) no longer grows `learnings.db` without bound.
+
+### Fixed
+- **Research fetches degrade gracefully behind a TLS-intercepting proxy** —
+  `TIRAMISU_CA_BUNDLE` trusts a corporate/sandbox root cert, `TIRAMISU_INSECURE_SSL`
+  is a last-resort escape hatch. Verification stays on by default.
+
+### Notes
+- Test suite grew 175 → **249**, green across the 3 OS × 2 Python CI matrix.
+- Schema migrations v5 (FTS5 index) and v6 (`preferences.confidence`) added,
+  contiguous and idempotent per the schema-discipline invariant (§7).
+
 ## [1.1.0] — 2026-06-11
 
 The research loop closes: Cannoli's findings can now be adopted with one
