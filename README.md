@@ -8,7 +8,7 @@
 
 A personal multi-agent dev system. A crew of pastry-named pets that scope your work, write code, review changes, draft commit messages, and learn your preferences over time. Runs as a CLI, integrates with git via hooks. No IDE plugin required.
 
-MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 175-test suite across 10 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 7-layer steering composition, the memory layer + schema migrations, and the source-config loader. Runs in seconds with no API calls (Anthropic client is mocked).
+MIT licensed. Windows-first; macOS / Linux supported via POSIX shell shims. 254-test suite across 17 modules covers the safety surfaces (path sandboxing, confirmation gating), the router, the 7-layer steering composition, the memory layer + schema migrations, and the source-config loader. Runs in seconds with no API calls (Anthropic client is mocked).
 
 ## The Crew
 
@@ -299,7 +299,7 @@ tiramisu/
 │   ├── RESEARCH.md          # Autonomous research subsystem
 │   ├── UI.md                # Render modes + spinners + REPL keys
 │   └── DEVELOPING.md        # Contributor / agent-developer pointer
-├── tests/                   # 175-test pytest suite (safety, router, steering, memory)
+├── tests/                   # 254-test pytest suite (safety, router, steering, memory)
 ├── .github/workflows/       # CI: 3 OS x 2 Python matrix on every push / PR
 ├── steering/                # Shared steering docs (composed into every agent prompt)
 │   ├── code-style.md        # Per-language style (Java / Python / Rust / TypeScript)

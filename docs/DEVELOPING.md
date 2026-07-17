@@ -44,7 +44,7 @@ See `CLAUDE.md` §5 for the exact steps. Briefly:
 
 ## Testing posture
 
-Tiramisu has a **175-test pytest suite** in `tests/` covering safety
+Tiramisu has a **254-test pytest suite** in `tests/` covering safety
 invariants, router behavior, persona uniqueness, steering composition,
 memory CRUD + migrations, and research source config. It runs in ~10s
 with no API calls (the `mock_invoke` fixture replaces `llm.invoke`).
