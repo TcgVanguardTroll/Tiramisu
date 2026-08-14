@@ -7,7 +7,7 @@ you're adding a feature and you find yourself relaxing one of these rules,
 stop and re-read the **Why it matters** column first.
 
 `tests/` runs in ~10s and gates every PR via `.github/workflows/test.yml`.
-83+ tests across the surfaces below.
+254 tests across 17 modules enforce the surfaces below.
 
 ---
 

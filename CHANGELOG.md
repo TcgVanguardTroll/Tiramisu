@@ -4,6 +4,13 @@ All notable changes to Tiramisu. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are tagged on
 `master`.
 
+## [Unreleased]
+
+### Fixed
+- Synced stale test-suite counts across all docs — README, DEVELOPING,
+  CLAUDE.md, INVARIANTS.md, and CI workflow now cite **254 tests across
+  17 modules** (`pytest --collect-only`).
+
 ## [1.2.0] — 2026-06-18
 
 The self-improvement loop gets sharper and safer. Cannoli can now
